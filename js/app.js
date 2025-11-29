@@ -53,6 +53,22 @@ function init() {
     setupNavigation();
     setupScoreValidation();
     loadSettingsToForm();
+    loadNewSetFormDefaults();
+}
+
+function loadNewSetFormDefaults() {
+    const settings = getSettings();
+    document.getElementById('new-set-start').value = settings.startScore;
+    document.getElementById('new-set-return').value = settings.returnScore;
+    document.getElementById('new-set-uma1').value = settings.uma[0];
+    document.getElementById('new-set-uma2').value = settings.uma[1];
+    document.getElementById('new-set-uma3').value = settings.uma[2];
+    document.getElementById('new-set-uma4').value = settings.uma[3];
+
+    const radios = document.getElementsByName('newSetTieBreaker');
+    radios.forEach(r => {
+        if (r.value === settings.tieBreaker) r.checked = true;
+    });
 }
 
 // --- Navigation ---
@@ -202,6 +218,13 @@ function renderUserDetail(userName) {
 addUserBtn.addEventListener('click', () => {
     const name = newUserNameInput.value.trim();
     if (name) {
+        // Check limit
+        const currentUsers = getUsers();
+        if (currentUsers.length >= 30) {
+            alert('ユーザー登録数の上限（30名）に達しました。');
+            return;
+        }
+
         if (addUser(name)) {
             newUserNameInput.value = '';
             renderUserOptions();
@@ -231,7 +254,19 @@ sessionSetupForm.addEventListener('submit', (e) => {
         return;
     }
 
-    const session = createSession(date, players);
+    const rules = {
+        startScore: Number(document.getElementById('new-set-start').value),
+        returnScore: Number(document.getElementById('new-set-return').value),
+        uma: [
+            Number(document.getElementById('new-set-uma1').value),
+            Number(document.getElementById('new-set-uma2').value),
+            Number(document.getElementById('new-set-uma3').value),
+            Number(document.getElementById('new-set-uma4').value)
+        ],
+        tieBreaker: document.querySelector('input[name="newSetTieBreaker"]:checked').value
+    };
+
+    const session = createSession(date, players, rules);
     openSession(session.id);
 });
 
@@ -239,7 +274,7 @@ function renderSessionList() {
     const sessions = getSessions();
     sessionList.innerHTML = '';
     if (sessions.length === 0) {
-        sessionList.innerHTML = '<p class="text-center" style="color: var(--text-secondary)">セッション履歴がありません。</p>';
+        sessionList.innerHTML = '<p class="text-center" style="color: var(--text-secondary)">セット履歴がありません。</p>';
         return;
     }
 
@@ -271,7 +306,7 @@ function renderSessionList() {
         // Delete button click
         div.querySelector('.delete-session-btn').addEventListener('click', (e) => {
             e.stopPropagation(); // Prevent card click
-            if (confirm('このセッションを削除しますか？\nこの操作は取り消せません。')) {
+            if (confirm('このセットを削除しますか？\nこの操作は取り消せません。')) {
                 removeSession(session.id);
                 renderSessionList();
             }
@@ -544,8 +579,10 @@ scoreForm.addEventListener('submit', (e) => {
         rawScores.push(score);
     }
 
-    // Get current settings
-    const settings = getSettings();
+    // Get session rules
+    const session = getSession(currentSessionId);
+    // Fallback to global settings if session has no rules (legacy)
+    const settings = session.rules || getSettings();
 
     // Initial calculation (no priority map)
     const results = calculateResult(rawScores, settings);

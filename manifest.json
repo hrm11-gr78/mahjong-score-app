@@ -1,6 +1,6 @@
 {
-  "name": "Mahjong Score Keeper",
-  "short_name": "麻雀スコア管理",
+  "name": "雀ログ - 麻雀スコア管理",
+  "short_name": "雀ログ",
   "start_url": "./index.html",
   "display": "standalone",
   "background_color": "#121212",
@@ -13,4 +13,3 @@
     }
   ]
 }
-
