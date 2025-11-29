@@ -1,0 +1,444 @@
+<!DOCTYPE html>
+<html lang="ja">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>麻雀スコア管理</title>
+    <link rel="stylesheet" href="css/style.css">
+    <link rel="manifest" href="manifest.json">
+    <meta name="theme-color" content="#121212">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+
+<body>
+    <div id="app">
+        <header>
+            <h1>🀄 麻雀スコア管理</h1>
+        </header>
+
+        <nav>
+            <button data-target="home" class="active">ホーム</button>
+            <button data-target="users">ユーザー</button>
+            <button data-target="settings">設定</button>
+        </nav>
+
+        <main>
+            <!-- HOME / SESSION SETUP SECTION -->
+            <section id="home" class="active">
+                <h2>新規セッション</h2>
+                <form id="session-setup-form">
+                    <div class="form-group">
+                        <label>日付</label>
+                        <input type="date" id="session-date" required>
+                    </div>
+                    <div class="form-group">
+                        <label>対局者 (4名)</label>
+                        <div class="score-grid">
+                            <select name="p1" required class="user-select">
+                                <option value="" disabled selected>選択...</option>
+                            </select>
+                            <select name="p2" required class="user-select">
+                                <option value="" disabled selected>選択...</option>
+                            </select>
+                            <select name="p3" required class="user-select">
+                                <option value="" disabled selected>選択...</option>
+                            </select>
+                            <select name="p4" required class="user-select">
+                                <option value="" disabled selected>選択...</option>
+                            </select>
+                        </div>
+                    </div>
+                    <button type="submit" class="btn-primary">セッション開始</button>
+                </form>
+
+                <h2 class="mt-4">過去のセッション</h2>
+                <div id="session-list">
+                    <!-- Session list injected here -->
+                </div>
+            </section>
+
+            <!-- SESSION DETAIL SECTION -->
+            <section id="session-detail">
+                <div class="history-header">
+                    <button id="back-to-home" class="btn-secondary">← 戻る</button>
+                    <span id="session-title" style="font-weight:bold;"></span>
+                </div>
+
+                <!-- Total Score Table -->
+                <div class="history-card">
+                    <h3>合計スコア</h3>
+                    <div style="position: relative; height: 300px; width: 100%; margin-bottom: 20px;">
+                        <canvas id="score-chart"></canvas>
+                    </div>
+                    <table class="history-table" id="session-total-table">
+                        <!-- Totals injected here -->
+                    </table>
+                </div>
+
+                <button id="new-game-btn" class="btn-primary" style="margin-bottom: 20px;">+ 対局を追加</button>
+
+                <h3>対局履歴</h3>
+                <div id="game-list">
+                    <!-- Games injected here -->
+                </div>
+            </section>
+
+            <!-- SCORE INPUT MODAL (Using Section for simplicity) -->
+            <section id="input">
+                <div class="history-header">
+                    <button id="cancel-input" class="btn-secondary">キャンセル</button>
+                    <span>スコア入力</span>
+                </div>
+                <form id="score-form">
+                    <div class="score-grid">
+                        <!-- Player 1 -->
+                        <div class="player-input">
+                            <label id="lbl-p1">Player 1</label>
+                            <input type="hidden" name="p1-name" id="inp-p1-name">
+                            <div class="input-wrapper">
+                                <input type="number" name="p1-score" placeholder="250" required>
+                                <span class="suffix">00</span>
+                            </div>
+                        </div>
+                        <!-- Player 2 -->
+                        <div class="player-input">
+                            <label id="lbl-p2">Player 2</label>
+                            <input type="hidden" name="p2-name" id="inp-p2-name">
+                            <div class="input-wrapper">
+                                <input type="number" name="p2-score" placeholder="250" required>
+                                <span class="suffix">00</span>
+                            </div>
+                        </div>
+                        <!-- Player 3 -->
+                        <div class="player-input">
+                            <label id="lbl-p3">Player 3</label>
+                            <input type="hidden" name="p3-name" id="inp-p3-name">
+                            <div class="input-wrapper">
+                                <input type="number" name="p3-score" placeholder="250" required>
+                                <span class="suffix">00</span>
+                            </div>
+                        </div>
+                        <!-- Player 4 -->
+                        <div class="player-input">
+                            <label id="lbl-p4">Player 4</label>
+                            <input type="hidden" name="p4-name" id="inp-p4-name">
+                            <div class="input-wrapper">
+                                <input type="number" name="p4-score" placeholder="250" required>
+                                <span class="suffix">00</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="total-check" id="total-check">合計: 0</div>
+
+                    <button type="submit" class="btn-primary">計算して保存</button>
+                </form>
+            </section>
+
+            <!-- SETTINGS SECTION -->
+            <section id="settings">
+                <h2>ルール設定</h2>
+                <form id="settings-form">
+                    <div class="form-group">
+                        <label>配給原点</label>
+                        <input type="number" id="set-start" value="25000" step="100">
+                    </div>
+                    <div class="form-group">
+                        <label>返し点</label>
+                        <input type="number" id="set-return" value="30000" step="100">
+                    </div>
+                    <div class="form-group">
+                        <label>ウマ (1位〜4位)</label>
+                        <div class="score-grid" style="grid-template-columns: 1fr 1fr 1fr 1fr; gap: 5px;">
+                            <input type="number" id="set-uma1" value="30">
+                            <input type="number" id="set-uma2" value="10">
+                            <input type="number" id="set-uma3" value="-10">
+                            <input type="number" id="set-uma4" value="-30">
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label>同点時の扱い</label>
+                        <div style="display: flex; gap: 20px; align-items: center;">
+                            <label style="display: flex; align-items: center; margin: 0; color: var(--text-primary);">
+                                <input type="radio" name="tieBreaker" value="priority" checked
+                                    style="width: auto; margin-right: 8px;"> 起家優先
+                            </label>
+                            <label style="display: flex; align-items: center; margin: 0; color: var(--text-primary);">
+                                <input type="radio" name="tieBreaker" value="split"
+                                    style="width: auto; margin-right: 8px;"> 山分け
+                            </label>
+                        </div>
+                    </div>
+                    <button type="submit" class="btn-primary">設定を保存</button>
+                    <button type="button" id="reset-settings" class="btn-danger"
+                        style="margin-top:10px;">初期値に戻す</button>
+                </form>
+            </section>
+
+            <!-- USERS SECTION -->
+            <section id="users">
+                <h2>ユーザー管理</h2>
+                <div class="form-group">
+                    <input type="text" id="new-user-name" placeholder="名前を入力...">
+                </div>
+                <button id="add-user-btn" class="btn-primary" style="margin-bottom: 20px;">ユーザー追加</button>
+
+                <h3>登録ユーザー</h3>
+                <ul id="user-list" class="user-list">
+                    <!-- Users will be injected here -->
+                </ul>
+            </section>
+
+            <!-- USER DETAIL SECTION -->
+            <section id="user-detail">
+                <div class="history-header">
+                    <button id="back-to-users" class="btn-secondary">← 戻る</button>
+                    <span id="user-detail-name" style="font-weight:bold;"></span>
+                </div>
+
+                <div class="history-card">
+                    <h3>累計スコア: <span id="user-total-score">0</span></h3>
+                    <table class="history-table">
+                        <thead>
+                            <tr>
+                                <th>日付</th>
+                                <th>当日スコア</th>
+                                <th>累計</th>
+                            </tr>
+                        </thead>
+                        <tbody id="user-history-list">
+                            <!-- History injected here -->
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <!-- TIE BREAKER MODAL -->
+    <div id="tie-breaker-modal" class="modal" style="display:none;">
+        <div class="modal-content">
+            <h3>同点解消</h3>
+            <p>同点のプレイヤーがいます。上家（起家に近い方）を選択してください。</p>
+            <div id="tie-breaker-options">
+                <form id="session-setup-form">
+                    <div class="form-group">
+                        <label>日付</label>
+                        <input type="date" id="session-date" required>
+                    </div>
+                    <div class="form-group">
+                        <label>対局者 (4名)</label>
+                        <div class="score-grid">
+                            <select name="p1" required class="user-select">
+                                <option value="" disabled selected>選択...</option>
+                            </select>
+                            <select name="p2" required class="user-select">
+                                <option value="" disabled selected>選択...</option>
+                            </select>
+                            <select name="p3" required class="user-select">
+                                <option value="" disabled selected>選択...</option>
+                            </select>
+                            <select name="p4" required class="user-select">
+                                <option value="" disabled selected>選択...</option>
+                            </select>
+                        </div>
+                    </div>
+                    <button type="submit" class="btn-primary">セッション開始</button>
+                </form>
+
+                <h2 class="mt-4">過去のセッション</h2>
+                <div id="session-list">
+                    <!-- Session list injected here -->
+                </div>
+                </section>
+
+                <!-- SESSION DETAIL SECTION -->
+                <section id="session-detail">
+                    <div class="history-header">
+                        <button id="back-to-home" class="btn-secondary">← 戻る</button>
+                        <span id="session-title" style="font-weight:bold;"></span>
+                    </div>
+
+                    <!-- Total Score Table -->
+                    <div class="history-card">
+                        <h3>合計スコア</h3>
+                        <div style="position: relative; height: 300px; width: 100%; margin-bottom: 20px;">
+                            <canvas id="score-chart"></canvas>
+                        </div>
+                        <table class="history-table" id="session-total-table">
+                            <!-- Totals injected here -->
+                        </table>
+                    </div>
+
+                    <button id="new-game-btn" class="btn-primary" style="margin-bottom: 20px;">+ 対局を追加</button>
+
+                    <h3>対局履歴</h3>
+                    <div id="game-list">
+                        <!-- Games injected here -->
+                    </div>
+                </section>
+
+                <!-- SCORE INPUT MODAL (Using Section for simplicity) -->
+                <section id="input">
+                    <div class="history-header">
+                        <button id="cancel-input" class="btn-secondary">キャンセル</button>
+                        <span>スコア入力</span>
+                    </div>
+                    <form id="score-form">
+                        <div class="score-grid">
+                            <!-- Player 1 -->
+                            <div class="player-input">
+                                <label id="lbl-p1">Player 1</label>
+                                <input type="hidden" name="p1-name" id="inp-p1-name">
+                                <div class="input-wrapper">
+                                    <input type="number" name="p1-score" placeholder="250" required>
+                                    <span class="suffix">00</span>
+                                </div>
+                            </div>
+                            <!-- Player 2 -->
+                            <div class="player-input">
+                                <label id="lbl-p2">Player 2</label>
+                                <input type="hidden" name="p2-name" id="inp-p2-name">
+                                <div class="input-wrapper">
+                                    <input type="number" name="p2-score" placeholder="250" required>
+                                    <span class="suffix">00</span>
+                                </div>
+                            </div>
+                            <!-- Player 3 -->
+                            <div class="player-input">
+                                <label id="lbl-p3">Player 3</label>
+                                <input type="hidden" name="p3-name" id="inp-p3-name">
+                                <div class="input-wrapper">
+                                    <input type="number" name="p3-score" placeholder="250" required>
+                                    <span class="suffix">00</span>
+                                </div>
+                            </div>
+                            <!-- Player 4 -->
+                            <div class="player-input">
+                                <label id="lbl-p4">Player 4</label>
+                                <input type="hidden" name="p4-name" id="inp-p4-name">
+                                <div class="input-wrapper">
+                                    <input type="number" name="p4-score" placeholder="250" required>
+                                    <span class="suffix">00</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="total-check" id="total-check">合計: 0</div>
+
+                        <button type="submit" class="btn-primary">計算して保存</button>
+                    </form>
+                </section>
+
+                <!-- SETTINGS SECTION -->
+                <section id="settings">
+                    <h2>ルール設定</h2>
+                    <form id="settings-form">
+                        <div class="form-group">
+                            <label>配給原点</label>
+                            <input type="number" id="set-start" value="25000" step="100">
+                        </div>
+                        <div class="form-group">
+                            <label>返し点</label>
+                            <input type="number" id="set-return" value="30000" step="100">
+                        </div>
+                        <div class="form-group">
+                            <label>ウマ (1位〜4位)</label>
+                            <div class="score-grid" style="grid-template-columns: 1fr 1fr 1fr 1fr; gap: 5px;">
+                                <input type="number" id="set-uma1" value="30">
+                                <input type="number" id="set-uma2" value="10">
+                                <input type="number" id="set-uma3" value="-10">
+                                <input type="number" id="set-uma4" value="-30">
+                            </div>
+                        </div>
+                        <div class="form-group">
+                            <label>同点時の扱い</label>
+                            <div style="display: flex; gap: 20px; align-items: center;">
+                                <label
+                                    style="display: flex; align-items: center; margin: 0; color: var(--text-primary);">
+                                    <input type="radio" name="tieBreaker" value="priority" checked
+                                        style="width: auto; margin-right: 8px;"> 起家優先
+                                </label>
+                                <label
+                                    style="display: flex; align-items: center; margin: 0; color: var(--text-primary);">
+                                    <input type="radio" name="tieBreaker" value="split"
+                                        style="width: auto; margin-right: 8px;"> 山分け
+                                </label>
+                            </div>
+                        </div>
+                        <button type="submit" class="btn-primary">設定を保存</button>
+                        <button type="button" id="reset-settings" class="btn-danger"
+                            style="margin-top:10px;">初期値に戻す</button>
+                    </form>
+                </section>
+
+                <!-- USERS SECTION -->
+                <section id="users">
+                    <h2>ユーザー管理</h2>
+                    <div class="form-group">
+                        <input type="text" id="new-user-name" placeholder="名前を入力...">
+                    </div>
+                    <button id="add-user-btn" class="btn-primary" style="margin-bottom: 20px;">ユーザー追加</button>
+
+                    <h3>登録ユーザー</h3>
+                    <ul id="user-list" class="user-list">
+                        <!-- Users will be injected here -->
+                    </ul>
+                </section>
+
+                <!-- USER DETAIL SECTION -->
+                <section id="user-detail">
+                    <div class="history-header">
+                        <button id="back-to-users" class="btn-secondary">← 戻る</button>
+                        <span id="user-detail-name" style="font-weight:bold;"></span>
+                    </div>
+
+                    <div class="history-card">
+                        <h3>累計スコア: <span id="user-total-score">0</span></h3>
+                        <table class="history-table">
+                            <thead>
+                                <tr>
+                                    <th>日付</th>
+                                    <th>当日スコア</th>
+                                    <th>累計</th>
+                                </tr>
+                            </thead>
+                            <tbody id="user-history-list">
+                                <!-- History injected here -->
+                            </tbody>
+                        </table>
+                    </div>
+                </section>
+                </main>
+            </div>
+
+            <!-- TIE BREAKER MODAL -->
+            <div id="tie-breaker-modal" class="modal" style="display:none;">
+                <div class="modal-content">
+                    <h3>同点解消</h3>
+                    <p>同点のプレイヤーがいます。上家（起家に近い方）を選択してください。</p>
+                    <div id="tie-breaker-options">
+                        <!-- Options injected here -->
+                    </div>
+                </div>
+            </div>
+
+            <script src="js/mahjong.js"></script>
+            <script src="js/storage.js"></script>
+            <script src="js/app.js"></script>
+            <script>
+                if ('serviceWorker' in navigator) {
+                    window.addEventListener('load', () => {
+                        navigator.serviceWorker.register('./sw.js')
+                            .then((registration) => {
+                                console.log('ServiceWorker registration successful with scope: ', registration.scope);
+                            }, (err) => {
+                                console.log('ServiceWorker registration failed: ', err);
+                            });
+                    });
+                }
+            </script>
+</body>
+
+</html>
