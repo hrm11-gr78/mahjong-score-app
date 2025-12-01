@@ -184,14 +184,15 @@ function renderUserDetail(userName) {
     // Filter sessions where user participated
     const userSessions = sessions.filter(s => s.players.includes(userName));
 
-    // Sort by date (oldest first for calculation)
-    userSessions.sort((a, b) => new Date(a.date) - new Date(b.date));
+    // Sort by date (newest first for display)
+    userSessions.sort((a, b) => new Date(b.date) - new Date(a.date));
 
+    // Calculate cumulative score by processing in chronological order
+    const chronological = [...userSessions].sort((a, b) => new Date(a.date) - new Date(b.date));
     let totalScore = 0;
-    let html = '';
+    const sessionScores = new Map();
 
-    // We need to process in order to calculate cumulative score
-    userSessions.forEach(session => {
+    chronological.forEach(session => {
         let sessionScore = 0;
         session.games.forEach(game => {
             const pData = game.players.find(p => p.name === userName);
@@ -199,25 +200,58 @@ function renderUserDetail(userName) {
                 sessionScore += pData.finalScore;
             }
         });
-
         totalScore += sessionScore;
+        sessionScores.set(session.id, sessionScore);
+    });
+
+    // Build HTML with sessions in newest-first order
+    let html = '';
+    userSessions.forEach(session => {
+        const sessionScore = sessionScores.get(session.id);
         const scoreClass = sessionScore >= 0 ? 'score-positive' : 'score-negative';
         const scoreStr = sessionScore > 0 ? `+${sessionScore}` : `${sessionScore}`;
-
-        const totalClass = totalScore >= 0 ? 'score-positive' : 'score-negative';
-        const totalStr = totalScore > 0 ? `+${totalScore}` : `${totalScore}`;
 
         html += `
             <tr style="cursor:pointer;" onclick="openSession(${session.id})">
                 <td>${session.date}</td>
                 <td class="${scoreClass}">${scoreStr}</td>
-                <td class="${totalClass}" style="font-weight:bold;">${totalStr}</td>
             </tr>
         `;
     });
 
+    // Apply basic score display
     userTotalScore.textContent = totalScore > 0 ? `+${totalScore}` : `${totalScore}`;
     userTotalScore.className = totalScore >= 0 ? 'score-positive' : 'score-negative';
+
+    // Get elements for rich styling
+    const scoreCard = document.getElementById('cumulative-score-card');
+    const scoreIcon = document.getElementById('score-icon');
+
+    if (scoreCard && scoreIcon) {
+        // Apply gradient and styling based on score with softer, app-matching colors
+        if (totalScore > 100) {
+            scoreCard.style.background = 'linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%)';
+            scoreCard.style.borderColor = '#a78bfa';
+            scoreIcon.textContent = '🔥';
+        } else if (totalScore > 0) {
+            scoreCard.style.background = 'linear-gradient(135deg, #8b5cf6 0%, #a78bfa 100%)';
+            scoreCard.style.borderColor = '#c4b5fd';
+            scoreIcon.textContent = '📈';
+        } else if (totalScore === 0) {
+            scoreCard.style.background = 'linear-gradient(135deg, #6b7280 0%, #9ca3af 100%)';
+            scoreCard.style.borderColor = '#d1d5db';
+            scoreIcon.textContent = '⚖️';
+        } else if (totalScore > -100) {
+            scoreCard.style.background = 'linear-gradient(135deg, #f472b6 0%, #fb7185 100%)';
+            scoreCard.style.borderColor = '#fda4af';
+            scoreIcon.textContent = '📉';
+        } else {
+            scoreCard.style.background = 'linear-gradient(135deg, #fb7185 0%, #fda4af 100%)';
+            scoreCard.style.borderColor = '#fecdd3';
+            scoreIcon.textContent = '⚠️';
+        }
+    }
+
     userHistoryList.innerHTML = html;
 }
 
