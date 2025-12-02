@@ -1,6 +1,6 @@
 // Remove imports, use globals
 const { calculateResult, validateTotal } = window.Mahjong;
-const { getUsers, addUser, removeUser, getSessions, createSession, getSession, addGameToSession, removeSession, removeGameFromSession, getSettings, saveSettings } = window.AppStorage;
+const { getUsers, addUser, removeUser, getSessions, createSession, getSession, addGameToSession, updateGameInSession, removeSession, removeGameFromSession, getSettings, saveSettings } = window.AppStorage;
 
 // --- DOM Elements ---
 const navButtons = document.querySelectorAll('nav button');
@@ -40,6 +40,7 @@ const tieBreakerOptions = document.getElementById('tie-breaker-options');
 
 // State
 let currentSessionId = null;
+let editingGameId = null; // ID of the game being edited
 let pendingGameData = null; // Store data while waiting for tie-breaker
 
 // --- Initialization ---
@@ -86,11 +87,13 @@ function setupNavigation() {
     });
 
     newGameBtn.addEventListener('click', () => {
+        editingGameId = null; // Reset edit mode
         navigateTo('input');
         prepareInputForm();
     });
 
     cancelInputBtn.addEventListener('click', () => {
+        editingGameId = null; // Reset edit mode
         navigateTo('session-detail');
     });
 }
@@ -509,7 +512,10 @@ function renderGameList(session) {
         card.innerHTML = `
             <div class="history-header">
                 <span>Game ${session.games.length - index}</span>
-                <button class="btn-danger btn-sm delete-game-btn" data-id="${game.id}" style="padding: 2px 8px; font-size: 0.8rem;">削除</button>
+                <div>
+                    <button class="btn-secondary btn-sm edit-game-btn" data-id="${game.id}" style="padding: 2px 8px; font-size: 0.8rem; margin-right: 5px;">修正</button>
+                    <button class="btn-danger btn-sm delete-game-btn" data-id="${game.id}" style="padding: 2px 8px; font-size: 0.8rem;">削除</button>
+                </div>
             </div>
             <table class="history-table">
                 <thead>
@@ -526,6 +532,12 @@ function renderGameList(session) {
             </table>
         `;
 
+        card.querySelector('.edit-game-btn').addEventListener('click', () => {
+            editingGameId = game.id;
+            navigateTo('input');
+            prepareInputForm(game);
+        });
+
         card.querySelector('.delete-game-btn').addEventListener('click', () => {
             if (confirm('この対局結果を削除しますか？')) {
                 removeGameFromSession(session.id, game.id);
@@ -540,7 +552,7 @@ function renderGameList(session) {
 
 // --- Score Input ---
 
-function prepareInputForm() {
+function prepareInputForm(gameToEdit = null) {
     const session = getSession(currentSessionId);
     if (!session) return;
 
@@ -555,7 +567,21 @@ function prepareInputForm() {
     }
     scoreForm.reset();
 
-    // Inputs are now empty with placeholder="250" hint
+    if (gameToEdit) {
+        // Populate with existing scores
+        for (let i = 0; i < 4; i++) {
+            const pName = session.players[i];
+            const pData = gameToEdit.players.find(p => p.name === pName);
+            if (pData) {
+                // rawScore is 25000 -> input 250
+                const inputVal = pData.rawScore / 100;
+                const input = document.querySelector(`input[name="p${i + 1}-score"]`);
+                if (input) input.value = inputVal;
+            }
+        }
+    }
+
+    // Calculate total
     calculateTotal();
 }
 
@@ -678,11 +704,17 @@ function finalizeGame(results, playerNames) {
     }));
 
     const gameData = {
-        id: Date.now(),
+        id: editingGameId || Date.now(), // Use existing ID if editing
         players: gamePlayers
     };
 
-    addGameToSession(currentSessionId, gameData);
+    if (editingGameId) {
+        updateGameInSession(currentSessionId, editingGameId, gameData);
+        editingGameId = null; // Reset
+        alert("対局結果を修正しました。");
+    } else {
+        addGameToSession(currentSessionId, gameData);
+    }
 
     // Return to detail
     openSession(currentSessionId);
