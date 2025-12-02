@@ -1,6 +1,6 @@
 // Remove imports, use globals
 const { calculateResult, validateTotal } = window.Mahjong;
-const { getUsers, addUser, removeUser, getSessions, createSession, getSession, addGameToSession, removeSession, removeGameFromSession, getSettings, saveSettings } = window.AppStorage;
+const { getUsers, addUser, removeUser, getSessions, createSession, getSession, addGameToSession, updateGameInSession, updateSession, removeSession, removeGameFromSession, getSettings, saveSettings } = window.AppStorage;
 
 // --- DOM Elements ---
 const navButtons = document.querySelectorAll('nav button');
@@ -14,6 +14,7 @@ const sessionList = document.getElementById('session-list');
 
 // Session Detail
 const sessionTitle = document.getElementById('session-title');
+const sessionRateSelect = document.getElementById('session-rate');
 const sessionTotalTable = document.getElementById('session-total-table');
 const gameList = document.getElementById('game-list');
 const newGameBtn = document.getElementById('new-game-btn');
@@ -40,6 +41,7 @@ const tieBreakerOptions = document.getElementById('tie-breaker-options');
 
 // State
 let currentSessionId = null;
+let editingGameId = null; // ID of the game being edited
 let pendingGameData = null; // Store data while waiting for tie-breaker
 
 // --- Initialization ---
@@ -86,12 +88,23 @@ function setupNavigation() {
     });
 
     newGameBtn.addEventListener('click', () => {
+        editingGameId = null; // Reset edit mode
         navigateTo('input');
         prepareInputForm();
     });
 
     cancelInputBtn.addEventListener('click', () => {
+        editingGameId = null; // Reset edit mode
         navigateTo('session-detail');
+    });
+
+    sessionRateSelect.addEventListener('change', (e) => {
+        const newRate = Number(e.target.value);
+        if (currentSessionId) {
+            updateSession(currentSessionId, { rate: newRate });
+            const session = getSession(currentSessionId);
+            renderSessionTotal(session);
+        }
     });
 }
 
@@ -358,6 +371,7 @@ function openSession(sessionId) {
     if (!session) return;
 
     sessionTitle.textContent = `${session.date}`;
+    sessionRateSelect.value = session.rate || 0;
 
     renderSessionTotal(session);
     renderScoreChart(session);
@@ -378,17 +392,28 @@ function renderSessionTotal(session) {
 
     // Sort by total score
     const sortedPlayers = session.players.slice().sort((a, b) => totals[b] - totals[a]);
+    const rate = session.rate || 0;
 
-    let html = `<thead><tr><th>順位</th><th>名前</th><th>合計Pt</th></tr></thead><tbody>`;
+    let html = `<thead><tr><th>順位</th><th>名前</th><th>合計Pt</th>${rate > 0 ? '<th>額</th>' : ''}</tr></thead><tbody>`;
     sortedPlayers.forEach((p, i) => {
         const score = parseFloat(totals[p].toFixed(1));
         const scoreClass = score >= 0 ? 'score-positive' : 'score-negative';
         const scoreStr = score > 0 ? `+${score}` : `${score}`;
+
+        let amountHtml = '';
+        if (rate > 0) {
+            const amount = Math.round(score * rate * 10);
+            const amountClass = amount >= 0 ? 'score-positive' : 'score-negative';
+            const amountStr = amount > 0 ? `+${amount}` : `${amount}`;
+            amountHtml = `<td class="${amountClass}">${amountStr}</td>`;
+        }
+
         html += `
             <tr>
                 <td>${i + 1}</td>
                 <td>${p}</td>
                 <td class="${scoreClass}" style="font-weight:bold;">${scoreStr}</td>
+                ${amountHtml}
             </tr>
         `;
     });
@@ -509,7 +534,10 @@ function renderGameList(session) {
         card.innerHTML = `
             <div class="history-header">
                 <span>Game ${session.games.length - index}</span>
-                <button class="btn-danger btn-sm delete-game-btn" data-id="${game.id}" style="padding: 2px 8px; font-size: 0.8rem;">削除</button>
+                <div>
+                    <button class="btn-secondary btn-sm edit-game-btn" data-id="${game.id}" style="padding: 2px 8px; font-size: 0.8rem; margin-right: 5px;">修正</button>
+                    <button class="btn-danger btn-sm delete-game-btn" data-id="${game.id}" style="padding: 2px 8px; font-size: 0.8rem;">削除</button>
+                </div>
             </div>
             <table class="history-table">
                 <thead>
@@ -526,6 +554,12 @@ function renderGameList(session) {
             </table>
         `;
 
+        card.querySelector('.edit-game-btn').addEventListener('click', () => {
+            editingGameId = game.id;
+            navigateTo('input');
+            prepareInputForm(game);
+        });
+
         card.querySelector('.delete-game-btn').addEventListener('click', () => {
             if (confirm('この対局結果を削除しますか？')) {
                 removeGameFromSession(session.id, game.id);
@@ -540,7 +574,7 @@ function renderGameList(session) {
 
 // --- Score Input ---
 
-function prepareInputForm() {
+function prepareInputForm(gameToEdit = null) {
     const session = getSession(currentSessionId);
     if (!session) return;
 
@@ -555,7 +589,21 @@ function prepareInputForm() {
     }
     scoreForm.reset();
 
-    // Inputs are now empty with placeholder="250" hint
+    if (gameToEdit) {
+        // Populate with existing scores
+        for (let i = 0; i < 4; i++) {
+            const pName = session.players[i];
+            const pData = gameToEdit.players.find(p => p.name === pName);
+            if (pData) {
+                // rawScore is 25000 -> input 250
+                const inputVal = pData.rawScore / 100;
+                const input = document.querySelector(`input[name="p${i + 1}-score"]`);
+                if (input) input.value = inputVal;
+            }
+        }
+    }
+
+    // Calculate total
     calculateTotal();
 }
 
@@ -678,11 +726,17 @@ function finalizeGame(results, playerNames) {
     }));
 
     const gameData = {
-        id: Date.now(),
+        id: editingGameId || Date.now(), // Use existing ID if editing
         players: gamePlayers
     };
 
-    addGameToSession(currentSessionId, gameData);
+    if (editingGameId) {
+        updateGameInSession(currentSessionId, editingGameId, gameData);
+        editingGameId = null; // Reset
+        alert("対局結果を修正しました。");
+    } else {
+        addGameToSession(currentSessionId, gameData);
+    }
 
     // Return to detail
     openSession(currentSessionId);
