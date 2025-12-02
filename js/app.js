@@ -544,21 +544,18 @@ function prepareInputForm() {
     const session = getSession(currentSessionId);
     if (!session) return;
 
-    // Set labels and hidden inputs
+    //Set player names
     for (let i = 0; i < 4; i++) {
-        const pName = session.players[i];
-        document.getElementById(`lbl-p${i + 1}`).textContent = pName;
-        document.getElementById(`inp-p${i + 1}-name`).value = pName;
+        const label = document.getElementById(`lbl-p${i + 1}`);
+        const hiddenInput = document.getElementById(`inp-p${i + 1}-name`);
+        if (label && hiddenInput) {
+            label.textContent = session.players[i];
+            hiddenInput.value = session.players[i];
+        }
     }
     scoreForm.reset();
 
-    // Set default values to 250 (25000)
-    scoreInputs.forEach(input => {
-        if (scoreForm.contains(input)) {
-            input.value = 250;
-        }
-    });
-
+    // Inputs are now empty with placeholder="250" hint
     calculateTotal();
 }
 
