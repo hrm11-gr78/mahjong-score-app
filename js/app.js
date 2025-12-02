@@ -1,6 +1,6 @@
 // Remove imports, use globals
 const { calculateResult, validateTotal } = window.Mahjong;
-const { getUsers, addUser, removeUser, getSessions, createSession, getSession, addGameToSession, updateGameInSession, removeSession, removeGameFromSession, getSettings, saveSettings } = window.AppStorage;
+const { getUsers, addUser, removeUser, getSessions, createSession, getSession, addGameToSession, updateGameInSession, updateSession, removeSession, removeGameFromSession, getSettings, saveSettings } = window.AppStorage;
 
 // --- DOM Elements ---
 const navButtons = document.querySelectorAll('nav button');
@@ -14,6 +14,7 @@ const sessionList = document.getElementById('session-list');
 
 // Session Detail
 const sessionTitle = document.getElementById('session-title');
+const sessionRateSelect = document.getElementById('session-rate');
 const sessionTotalTable = document.getElementById('session-total-table');
 const gameList = document.getElementById('game-list');
 const newGameBtn = document.getElementById('new-game-btn');
@@ -95,6 +96,15 @@ function setupNavigation() {
     cancelInputBtn.addEventListener('click', () => {
         editingGameId = null; // Reset edit mode
         navigateTo('session-detail');
+    });
+
+    sessionRateSelect.addEventListener('change', (e) => {
+        const newRate = Number(e.target.value);
+        if (currentSessionId) {
+            updateSession(currentSessionId, { rate: newRate });
+            const session = getSession(currentSessionId);
+            renderSessionTotal(session);
+        }
     });
 }
 
@@ -361,6 +371,7 @@ function openSession(sessionId) {
     if (!session) return;
 
     sessionTitle.textContent = `${session.date}`;
+    sessionRateSelect.value = session.rate || 0;
 
     renderSessionTotal(session);
     renderScoreChart(session);
@@ -381,17 +392,28 @@ function renderSessionTotal(session) {
 
     // Sort by total score
     const sortedPlayers = session.players.slice().sort((a, b) => totals[b] - totals[a]);
+    const rate = session.rate || 0;
 
-    let html = `<thead><tr><th>順位</th><th>名前</th><th>合計Pt</th></tr></thead><tbody>`;
+    let html = `<thead><tr><th>順位</th><th>名前</th><th>合計Pt</th>${rate > 0 ? '<th>額</th>' : ''}</tr></thead><tbody>`;
     sortedPlayers.forEach((p, i) => {
         const score = parseFloat(totals[p].toFixed(1));
         const scoreClass = score >= 0 ? 'score-positive' : 'score-negative';
         const scoreStr = score > 0 ? `+${score}` : `${score}`;
+
+        let amountHtml = '';
+        if (rate > 0) {
+            const amount = Math.round(score * rate * 10);
+            const amountClass = amount >= 0 ? 'score-positive' : 'score-negative';
+            const amountStr = amount > 0 ? `+${amount}` : `${amount}`;
+            amountHtml = `<td class="${amountClass}">${amountStr}</td>`;
+        }
+
         html += `
             <tr>
                 <td>${i + 1}</td>
                 <td>${p}</td>
                 <td class="${scoreClass}" style="font-weight:bold;">${scoreStr}</td>
+                ${amountHtml}
             </tr>
         `;
     });
