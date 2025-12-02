@@ -105,21 +105,6 @@ window.AppStorage.removeGameFromSession = function (sessionId, gameId) {
     return false;
 };
 
-window.AppStorage.updateGameInSession = function (sessionId, gameId, updatedGameData) {
-    const sessions = window.AppStorage.getSessions();
-    const sessionIndex = sessions.findIndex(s => s.id === Number(sessionId));
-
-    if (sessionIndex !== -1) {
-        const gameIndex = sessions[sessionIndex].games.findIndex(g => g.id === Number(gameId));
-        if (gameIndex !== -1) {
-            sessions[sessionIndex].games[gameIndex] = updatedGameData;
-            localStorage.setItem(KEYS.SESSIONS, JSON.stringify(sessions));
-            return true;
-        }
-    }
-    return false;
-};
-
 window.AppStorage.clearAllData = function () {
     localStorage.removeItem(KEYS.USERS);
     localStorage.removeItem(KEYS.SESSIONS);
