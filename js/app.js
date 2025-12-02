@@ -186,6 +186,8 @@ function openUserDetail(userName) {
     navigateTo('user-detail');
 }
 
+window.openUserDetail = openUserDetail;
+
 function renderUserDetail(userName) {
     const sessions = getSessions();
     // Filter sessions where user participated
@@ -394,7 +396,7 @@ function renderSessionTotal(session) {
     const sortedPlayers = session.players.slice().sort((a, b) => totals[b] - totals[a]);
     const rate = session.rate || 0;
 
-    let html = `<thead><tr><th>順位</th><th>名前</th><th>合計Pt</th>${rate > 0 ? '<th>額</th>' : ''}</tr></thead><tbody>`;
+    let html = `<thead><tr><th>順位</th><th>名前</th><th>合計Pt</th>${rate > 0 ? '<th>収支</th>' : ''}</tr></thead><tbody>`;
     sortedPlayers.forEach((p, i) => {
         const score = parseFloat(totals[p].toFixed(1));
         const scoreClass = score >= 0 ? 'score-positive' : 'score-negative';
@@ -411,7 +413,7 @@ function renderSessionTotal(session) {
         html += `
             <tr>
                 <td>${i + 1}</td>
-                <td>${p}</td>
+                <td><span style="cursor:pointer; text-decoration:underline;" onclick="openUserDetail('${p}')">${p}</span></td>
                 <td class="${scoreClass}" style="font-weight:bold;">${scoreStr}</td>
                 ${amountHtml}
             </tr>
@@ -544,7 +546,7 @@ function renderGameList(session) {
                     <tr>
                         <th width="10%">#</th>
                         <th width="40%">名前</th>
-                        <th width="25%">素点</th>
+                        <th width="25%">最終持ち点</th>
                         <th width="25%">Pt</th>
                     </tr>
                 </thead>
