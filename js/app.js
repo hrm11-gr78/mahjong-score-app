@@ -217,20 +217,35 @@ function renderUserDetail(userName) {
     let html = '';
     userSessions.forEach(session => {
         const sessionScore = sessionScores.get(session.id);
-        const scoreClass = sessionScore >= 0 ? 'score-positive' : 'score-negative';
-        const scoreStr = sessionScore > 0 ? `+${sessionScore}` : `${sessionScore}`;
+        const score = parseFloat(sessionScore.toFixed(1));
+        const scoreClass = score >= 0 ? 'score-positive' : 'score-negative';
+        const scoreStr = score > 0 ? `+${score}` : `${score}`;
+
+        // Calculate amount based on session rate
+        const rate = session.rate || 0;
+        let amountHtml = '';
+        if (rate > 0) {
+            const amount = Math.round(sessionScore * rate * 10);
+            const amountClass = amount >= 0 ? 'score-positive' : 'score-negative';
+            const amountStr = amount > 0 ? `+${amount}` : `${amount}`;
+            amountHtml = `<td class="${amountClass}">${amountStr}</td>`;
+        } else {
+            amountHtml = '<td>-</td>';
+        }
 
         html += `
             <tr style="cursor:pointer;" onclick="openSession(${session.id})">
                 <td>${session.date}</td>
                 <td class="${scoreClass}">${scoreStr}</td>
+                ${amountHtml}
             </tr>
         `;
     });
 
     // Apply basic score display
-    userTotalScore.textContent = totalScore > 0 ? `+${totalScore}` : `${totalScore}`;
-    userTotalScore.className = totalScore >= 0 ? 'score-positive' : 'score-negative';
+    const displayScore = parseFloat(totalScore.toFixed(1));
+    userTotalScore.textContent = displayScore > 0 ? `+${displayScore}` : `${displayScore}`;
+    userTotalScore.className = displayScore >= 0 ? 'score-positive' : 'score-negative';
 
     // Get elements for rich styling
     const scoreCard = document.getElementById('cumulative-score-card');
