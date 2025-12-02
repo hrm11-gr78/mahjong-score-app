@@ -1,6 +1,6 @@
 // Remove imports, use globals
 const { calculateResult, validateTotal } = window.Mahjong;
-const { getUsers, addUser, removeUser, getSessions, createSession, getSession, addGameToSession, removeSession, removeGameFromSession, updateGameInSession, updateSession, getSettings, saveSettings } = window.AppStorage;
+const { getUsers, addUser, removeUser, getSessions, createSession, getSession, addGameToSession, removeSession, removeGameFromSession, getSettings, saveSettings } = window.AppStorage;
 
 // --- DOM Elements ---
 const navButtons = document.querySelectorAll('nav button');
@@ -14,7 +14,6 @@ const sessionList = document.getElementById('session-list');
 
 // Session Detail
 const sessionTitle = document.getElementById('session-title');
-const sessionRateSelect = document.getElementById('session-rate');
 const sessionTotalTable = document.getElementById('session-total-table');
 const gameList = document.getElementById('game-list');
 const newGameBtn = document.getElementById('new-game-btn');
@@ -41,7 +40,6 @@ const tieBreakerOptions = document.getElementById('tie-breaker-options');
 
 // State
 let currentSessionId = null;
-let editingGameId = null; // ID of the game being edited
 let pendingGameData = null; // Store data while waiting for tie-breaker
 
 // --- Initialization ---
@@ -88,17 +86,13 @@ function setupNavigation() {
     });
 
     newGameBtn.addEventListener('click', () => {
-        editingGameId = null; // Reset edit mode
         navigateTo('input');
         prepareInputForm();
     });
 
     cancelInputBtn.addEventListener('click', () => {
-        editingGameId = null; // Reset edit mode
         navigateTo('session-detail');
     });
-
-
 }
 
 function navigateTo(targetId) {
@@ -148,9 +142,11 @@ function renderUserList() {
             <button class="btn-danger" data-user="${user}">削除</button>
         `;
         li.querySelector('.user-name-link').addEventListener('click', () => openUserDetail(user));
+        userList.appendChild(li);
+    });
 
-        // Add delete listener directly to this button
-        li.querySelector('.btn-danger').addEventListener('click', (e) => {
+    document.querySelectorAll('.btn-danger').forEach(btn => {
+        btn.addEventListener('click', (e) => {
             const user = e.target.dataset.user;
             if (confirm(`ユーザー "${user}" を削除しますか？`)) {
                 removeUser(user);
@@ -158,8 +154,6 @@ function renderUserList() {
                 renderUserList();
             }
         });
-
-        userList.appendChild(li);
     });
 }
 
@@ -364,22 +358,12 @@ function openSession(sessionId) {
     if (!session) return;
 
     sessionTitle.textContent = `${session.date}`;
-    sessionRateSelect.value = session.rate || 0;
 
     renderSessionTotal(session);
     renderScoreChart(session);
     renderGameList(session);
     navigateTo('session-detail');
 }
-
-sessionRateSelect.addEventListener('change', (e) => {
-    if (currentSessionId) {
-        const rate = Number(e.target.value);
-        updateSession(currentSessionId, { rate: rate });
-        const session = getSession(currentSessionId);
-        renderSessionTotal(session);
-    }
-});
 
 function renderSessionTotal(session) {
     // Calculate totals
@@ -394,28 +378,17 @@ function renderSessionTotal(session) {
 
     // Sort by total score
     const sortedPlayers = session.players.slice().sort((a, b) => totals[b] - totals[a]);
-    const rate = session.rate || 0;
 
-    let html = `<thead><tr><th>順位</th><th>名前</th><th>合計Pt</th>${rate > 0 ? '<th>額</th>' : ''}</tr></thead><tbody>`;
+    let html = `<thead><tr><th>順位</th><th>名前</th><th>合計Pt</th></tr></thead><tbody>`;
     sortedPlayers.forEach((p, i) => {
         const score = parseFloat(totals[p].toFixed(1));
         const scoreClass = score >= 0 ? 'score-positive' : 'score-negative';
         const scoreStr = score > 0 ? `+${score}` : `${score}`;
-
-        let amountHtml = '';
-        if (rate > 0) {
-            const amount = Math.round(score * rate * 10);
-            const amountClass = amount >= 0 ? 'score-positive' : 'score-negative';
-            const amountStr = amount > 0 ? `+${amount}` : `${amount}`;
-            amountHtml = `<td class="${amountClass}">${amountStr}</td>`;
-        }
-
         html += `
             <tr>
                 <td>${i + 1}</td>
                 <td>${p}</td>
                 <td class="${scoreClass}" style="font-weight:bold;">${scoreStr}</td>
-                ${amountHtml}
             </tr>
         `;
     });
@@ -536,10 +509,7 @@ function renderGameList(session) {
         card.innerHTML = `
             <div class="history-header">
                 <span>Game ${session.games.length - index}</span>
-                <div>
-                    <button class="btn-secondary btn-sm edit-game-btn" data-id="${game.id}" style="padding: 2px 8px; font-size: 0.8rem; margin-right: 5px;">修正</button>
-                    <button class="btn-danger btn-sm delete-game-btn" data-id="${game.id}" style="padding: 2px 8px; font-size: 0.8rem;">削除</button>
-                </div>
+                <button class="btn-danger btn-sm delete-game-btn" data-id="${game.id}" style="padding: 2px 8px; font-size: 0.8rem;">削除</button>
             </div>
             <table class="history-table">
                 <thead>
@@ -564,19 +534,13 @@ function renderGameList(session) {
             }
         });
 
-        card.querySelector('.edit-game-btn').addEventListener('click', () => {
-            editingGameId = game.id;
-            navigateTo('input');
-            prepareInputForm(game);
-        });
-
         gameList.appendChild(card);
     });
 }
 
 // --- Score Input ---
 
-function prepareInputForm(gameToEdit = null) {
+function prepareInputForm() {
     const session = getSession(currentSessionId);
     if (!session) return;
 
@@ -588,28 +552,12 @@ function prepareInputForm(gameToEdit = null) {
     }
     scoreForm.reset();
 
-    if (gameToEdit) {
-        // Populate with existing scores
-        // gameToEdit.players contains { name, rawScore, ... }
-        // We need to map back to p1..p4 based on name
-        for (let i = 0; i < 4; i++) {
-            const pName = session.players[i];
-            const pData = gameToEdit.players.find(p => p.name === pName);
-            if (pData) {
-                // rawScore is 25000 -> input 250
-                const inputVal = pData.rawScore / 100;
-                const input = document.querySelector(`input[name="p${i + 1}-score"]`);
-                if (input) input.value = inputVal;
-            }
+    // Set default values to 250 (25000)
+    scoreInputs.forEach(input => {
+        if (scoreForm.contains(input)) {
+            input.value = 250;
         }
-    } else {
-        // Set default values to 250 (25000)
-        scoreInputs.forEach(input => {
-            if (scoreForm.contains(input)) {
-                input.value = 250;
-            }
-        });
-    }
+    });
 
     calculateTotal();
 }
@@ -667,10 +615,6 @@ scoreForm.addEventListener('submit', (e) => {
 
     // Get session rules
     const session = getSession(currentSessionId);
-    if (!session) {
-        alert("セッションエラー: セッションが見つかりません。");
-        return;
-    }
     // Fallback to global settings if session has no rules (legacy)
     const settings = session.rules || getSettings();
 
@@ -737,23 +681,15 @@ function finalizeGame(results, playerNames) {
     }));
 
     const gameData = {
-        id: editingGameId || Date.now(), // Use existing ID if editing
+        id: Date.now(),
         players: gamePlayers
     };
 
-    if (editingGameId) {
-        updateGameInSession(currentSessionId, editingGameId, gameData);
-        editingGameId = null; // Reset
-        alert("対局結果を修正しました。");
-    } else {
-        addGameToSession(currentSessionId, gameData);
-    }
+    addGameToSession(currentSessionId, gameData);
 
     // Return to detail
     openSession(currentSessionId);
 }
-
-
 
 // --- Settings ---
 
@@ -808,4 +744,4 @@ resetSettingsBtn.addEventListener('click', () => {
 });
 
 // Start
-document.addEventListener('DOMContentLoaded', init);
+init();
