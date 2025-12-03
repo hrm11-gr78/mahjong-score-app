@@ -233,11 +233,24 @@ function renderUserDetail(userName) {
             amountHtml = '<td>-</td>';
         }
 
+        // Calculate rank counts for this session
+        const rankCounts = [0, 0, 0, 0];
+        session.games.forEach(game => {
+            const pData = game.players.find(p => p.name === userName);
+            if (pData && pData.rank >= 1 && pData.rank <= 4) {
+                rankCounts[pData.rank - 1]++;
+            }
+        });
+
         html += `
             <tr style="cursor:pointer;" onclick="openSession(${session.id})">
                 <td>${session.date}</td>
                 <td class="${scoreClass}">${scoreStr}</td>
                 ${amountHtml}
+                <td>${rankCounts[0]}</td>
+                <td>${rankCounts[1]}</td>
+                <td>${rankCounts[2]}</td>
+                <td>${rankCounts[3]}</td>
             </tr>
         `;
     });
@@ -320,6 +333,75 @@ function renderUserDetail(userName) {
             amountElement.textContent = amountStr;
             amountElement.className = totalAmount >= 0 ? 'score-positive' : 'score-negative';
         }
+    }
+
+    // Calculate total rank counts and average rank
+    const totalRankCounts = [0, 0, 0, 0];
+    let totalGames = 0;
+
+    chronological.forEach(session => {
+        session.games.forEach(game => {
+            const pData = game.players.find(p => p.name === userName);
+            if (pData && pData.rank >= 1 && pData.rank <= 4) {
+                totalRankCounts[pData.rank - 1]++;
+                totalGames++;
+            }
+        });
+    });
+
+    let averageRank = 0;
+    if (totalGames > 0) {
+        const sumRanks = (totalRankCounts[0] * 1) + (totalRankCounts[1] * 2) + (totalRankCounts[2] * 3) + (totalRankCounts[3] * 4);
+        averageRank = (sumRanks / totalGames).toFixed(2);
+    } else {
+        averageRank = '-';
+    }
+
+    // Display rank stats on the score card
+    let statsElement = document.getElementById('user-rank-stats');
+    if (!statsElement) {
+        const scoreCardContent = scoreCard.querySelector('[style*="z-index: 1"]');
+        if (scoreCardContent) {
+            const statsDiv = document.createElement('div');
+            statsDiv.style.cssText = 'margin-top: 30px; padding-top: 30px; border-top: 1px solid rgba(255,255,255,0.2);';
+            statsDiv.innerHTML = `
+                <div style="font-size: 1rem; color: #e2e8f0; margin-bottom: 16px; letter-spacing: 1px; text-transform: uppercase; font-weight: 600; padding: 8px 20px; border: 2px solid rgba(226, 232, 240, 0.3); border-radius: 20px; display: inline-block;">
+                    成績詳細
+                </div>
+                <div id="user-rank-stats" style="display: flex; flex-direction: column; gap: 15px; color: #fff;">
+                    <!-- Stats injected here -->
+                </div>
+            `;
+            scoreCardContent.appendChild(statsDiv);
+            statsElement = document.getElementById('user-rank-stats');
+        }
+    }
+
+    if (statsElement) {
+        statsElement.innerHTML = `
+            <div style="display: flex; justify-content: space-around; width: 100%; max-width: 400px; margin: 0 auto;">
+                <div style="text-align: center;">
+                    <div style="font-size: 0.9rem; color: #bb86fc; margin-bottom: 5px;">1着</div>
+                    <div style="font-size: 1.5rem; font-weight: bold;">${totalRankCounts[0]}</div>
+                </div>
+                <div style="text-align: center;">
+                    <div style="font-size: 0.9rem; color: #03dac6; margin-bottom: 5px;">2着</div>
+                    <div style="font-size: 1.5rem; font-weight: bold;">${totalRankCounts[1]}</div>
+                </div>
+                <div style="text-align: center;">
+                    <div style="font-size: 0.9rem; color: #cf6679; margin-bottom: 5px;">3着</div>
+                    <div style="font-size: 1.5rem; font-weight: bold;">${totalRankCounts[2]}</div>
+                </div>
+                <div style="text-align: center;">
+                    <div style="font-size: 0.9rem; color: #ffb74d; margin-bottom: 5px;">4着</div>
+                    <div style="font-size: 1.5rem; font-weight: bold;">${totalRankCounts[3]}</div>
+                </div>
+            </div>
+            <div style="margin-top: 15px; font-size: 1.2rem;">
+                <span style="color: #e2e8f0; margin-right: 10px;">平均順位:</span>
+                <span style="font-weight: 800; font-size: 1.8rem;">${averageRank}</span>
+            </div>
+        `;
     }
 
     userHistoryList.innerHTML = html;
@@ -443,13 +525,26 @@ function openSession(sessionId) {
 }
 
 function renderSessionTotal(session) {
-    // Calculate totals
+    // Calculate totals and rank counts
     const totals = {};
-    session.players.forEach(p => totals[p] = 0);
+    const rankCounts = {}; // { playerName: [1st, 2nd, 3rd, 4th] }
+
+    session.players.forEach(p => {
+        totals[p] = 0;
+        rankCounts[p] = [0, 0, 0, 0];
+    });
 
     session.games.forEach(game => {
+        // Sort players in this game by rank to ensure correct indexing if needed, 
+        // though game.players usually has rank info.
+        // game.players objects have { name, rank, finalScore, ... }
         game.players.forEach(p => {
-            totals[p.name] += p.finalScore;
+            if (totals[p.name] !== undefined) {
+                totals[p.name] += p.finalScore;
+            }
+            if (rankCounts[p.name] !== undefined && p.rank >= 1 && p.rank <= 4) {
+                rankCounts[p.name][p.rank - 1]++;
+            }
         });
     });
 
@@ -457,7 +552,18 @@ function renderSessionTotal(session) {
     const sortedPlayers = session.players.slice().sort((a, b) => totals[b] - totals[a]);
     const rate = session.rate || 0;
 
-    let html = `<thead><tr><th>順位</th><th>名前</th><th>合計Pt</th>${rate > 0 ? '<th>収支</th>' : ''}</tr></thead><tbody>`;
+    // Build Table Header
+    let html = `<thead><tr>
+        <th>順位</th>
+        <th>名前</th>
+        <th>合計Pt</th>
+        ${rate > 0 ? '<th>収支</th>' : ''}
+        <th style="font-size:0.8em; color:#bb86fc;">1着</th>
+        <th style="font-size:0.8em; color:#03dac6;">2着</th>
+        <th style="font-size:0.8em; color:#cf6679;">3着</th>
+        <th style="font-size:0.8em; color:#ffb74d;">4着</th>
+    </tr></thead><tbody>`;
+
     sortedPlayers.forEach((p, i) => {
         const score = parseFloat(totals[p].toFixed(1));
         const scoreClass = score >= 0 ? 'score-positive' : 'score-negative';
@@ -471,12 +577,23 @@ function renderSessionTotal(session) {
             amountHtml = `<td class="${amountClass}">${amountStr}</td>`;
         }
 
+        // Get rank counts
+        const counts = rankCounts[p];
+        const c1 = counts[0];
+        const c2 = counts[1];
+        const c3 = counts[2];
+        const c4 = counts[3];
+
         html += `
             <tr>
                 <td>${i + 1}</td>
                 <td><span style="cursor:pointer; text-decoration:underline;" onclick="openUserDetail('${p}')">${p}</span></td>
                 <td class="${scoreClass}" style="font-weight:bold;">${scoreStr}</td>
                 ${amountHtml}
+                <td>${c1}</td>
+                <td>${c2}</td>
+                <td>${c3}</td>
+                <td>${c4}</td>
             </tr>
         `;
     });
