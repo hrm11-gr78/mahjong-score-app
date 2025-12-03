@@ -186,6 +186,8 @@ function openUserDetail(userName) {
     navigateTo('user-detail');
 }
 
+window.openUserDetail = openUserDetail;
+
 function renderUserDetail(userName) {
     const sessions = getSessions();
     // Filter sessions where user participated
@@ -215,20 +217,35 @@ function renderUserDetail(userName) {
     let html = '';
     userSessions.forEach(session => {
         const sessionScore = sessionScores.get(session.id);
-        const scoreClass = sessionScore >= 0 ? 'score-positive' : 'score-negative';
-        const scoreStr = sessionScore > 0 ? `+${sessionScore}` : `${sessionScore}`;
+        const score = parseFloat(sessionScore.toFixed(1));
+        const scoreClass = score >= 0 ? 'score-positive' : 'score-negative';
+        const scoreStr = score > 0 ? `+${score}` : `${score}`;
+
+        // Calculate amount based on session rate
+        const rate = session.rate || 0;
+        let amountHtml = '';
+        if (rate > 0) {
+            const amount = Math.round(sessionScore * rate * 10);
+            const amountClass = amount >= 0 ? 'score-positive' : 'score-negative';
+            const amountStr = amount > 0 ? `+${amount}` : `${amount}`;
+            amountHtml = `<td class="${amountClass}">${amountStr}</td>`;
+        } else {
+            amountHtml = '<td>-</td>';
+        }
 
         html += `
             <tr style="cursor:pointer;" onclick="openSession(${session.id})">
                 <td>${session.date}</td>
                 <td class="${scoreClass}">${scoreStr}</td>
+                ${amountHtml}
             </tr>
         `;
     });
 
     // Apply basic score display
-    userTotalScore.textContent = totalScore > 0 ? `+${totalScore}` : `${totalScore}`;
-    userTotalScore.className = totalScore >= 0 ? 'score-positive' : 'score-negative';
+    const displayScore = parseFloat(totalScore.toFixed(1));
+    userTotalScore.textContent = displayScore > 0 ? `+${displayScore}` : `${displayScore}`;
+    userTotalScore.className = displayScore >= 0 ? 'score-positive' : 'score-negative';
 
     // Get elements for rich styling
     const scoreCard = document.getElementById('cumulative-score-card');
@@ -256,6 +273,52 @@ function renderUserDetail(userName) {
             scoreCard.style.background = 'linear-gradient(135deg, #fb7185 0%, #fda4af 100%)';
             scoreCard.style.borderColor = '#fecdd3';
             scoreIcon.textContent = '⚠️';
+        }
+    }
+
+    // Calculate cumulative amount (収支)
+    let totalAmount = 0;
+    chronological.forEach(session => {
+        const sessionScore = sessionScores.get(session.id);
+        const rate = session.rate || 0;
+        if (rate > 0) {
+            const amount = Math.round(sessionScore * rate * 10);
+            totalAmount += amount;
+        }
+    });
+
+    // Display cumulative amount on the score card
+    let amountElement = document.getElementById('user-total-amount');
+    if (!amountElement) {
+        // Create the element if it doesn't exist
+        const scoreCardContent = scoreCard.querySelector('[style*="z-index: 1"]');
+        if (scoreCardContent) {
+            const amountDiv = document.createElement('div');
+            amountDiv.style.cssText = 'margin-top: 30px; padding-top: 30px; border-top: 1px solid rgba(255,255,255,0.2);';
+            amountDiv.innerHTML = `
+                <div style="font-size: 1rem; color: #e2e8f0; margin-bottom: 16px; letter-spacing: 1px; text-transform: uppercase; font-weight: 600; padding: 8px 20px; border: 2px solid rgba(226, 232, 240, 0.3); border-radius: 20px; display: inline-block;">
+                    累計収支
+                </div>
+                <div style="display: flex; align-items: center; justify-content: center; gap: 15px;">
+                    <div style="font-size: 2.5rem; filter: drop-shadow(0 2px 8px rgba(0,0,0,0.3));">💰</div>
+                    <div style="font-size: 3.5rem; font-weight: 800; line-height: 1; text-shadow: 0 4px 12px rgba(0,0,0,0.4);">
+                        <span id="user-total-amount">-</span>
+                    </div>
+                </div>
+            `;
+            scoreCardContent.appendChild(amountDiv);
+            amountElement = document.getElementById('user-total-amount');
+        }
+    }
+
+    if (amountElement) {
+        if (totalAmount === 0 && chronological.every(s => !s.rate || s.rate === 0)) {
+            amountElement.textContent = '-';
+            amountElement.className = '';
+        } else {
+            const amountStr = totalAmount > 0 ? `+${totalAmount}` : `${totalAmount}`;
+            amountElement.textContent = amountStr;
+            amountElement.className = totalAmount >= 0 ? 'score-positive' : 'score-negative';
         }
     }
 
@@ -394,7 +457,7 @@ function renderSessionTotal(session) {
     const sortedPlayers = session.players.slice().sort((a, b) => totals[b] - totals[a]);
     const rate = session.rate || 0;
 
-    let html = `<thead><tr><th>順位</th><th>名前</th><th>合計Pt</th>${rate > 0 ? '<th>額</th>' : ''}</tr></thead><tbody>`;
+    let html = `<thead><tr><th>順位</th><th>名前</th><th>合計Pt</th>${rate > 0 ? '<th>収支</th>' : ''}</tr></thead><tbody>`;
     sortedPlayers.forEach((p, i) => {
         const score = parseFloat(totals[p].toFixed(1));
         const scoreClass = score >= 0 ? 'score-positive' : 'score-negative';
@@ -411,7 +474,7 @@ function renderSessionTotal(session) {
         html += `
             <tr>
                 <td>${i + 1}</td>
-                <td>${p}</td>
+                <td><span style="cursor:pointer; text-decoration:underline;" onclick="openUserDetail('${p}')">${p}</span></td>
                 <td class="${scoreClass}" style="font-weight:bold;">${scoreStr}</td>
                 ${amountHtml}
             </tr>
@@ -544,7 +607,7 @@ function renderGameList(session) {
                     <tr>
                         <th width="10%">#</th>
                         <th width="40%">名前</th>
-                        <th width="25%">素点</th>
+                        <th width="25%">最終持ち点</th>
                         <th width="25%">Pt</th>
                     </tr>
                 </thead>
