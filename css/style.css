@@ -363,3 +363,113 @@ input[type=number] {
     -moz-appearance: textfield;
     appearance: textfield;
 }
+
+/* Roulette Section */
+.roulette-container {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    margin-bottom: var(--spacing-lg);
+}
+
+.canvas-wrapper {
+    position: relative;
+    margin-bottom: var(--spacing-md);
+    width: 300px;
+    height: 300px;
+}
+
+#roulette-canvas {
+    border-radius: 50%;
+    box-shadow: 0 0 20px rgba(0, 0, 0, 0.5);
+    background-color: var(--surface-color);
+}
+
+.roulette-arrow {
+    position: absolute;
+    top: -15px;
+    left: 50%;
+    transform: translateX(-50%);
+    font-size: 2.5rem;
+    color: var(--error-color);
+    text-shadow: 0 2px 4px rgba(0, 0, 0, 0.5);
+    z-index: 10;
+    pointer-events: none;
+}
+
+.roulette-controls {
+    width: 100%;
+    max-width: 300px;
+    text-align: center;
+}
+
+.roulette-result {
+    margin-top: var(--spacing-md);
+    font-size: 1.5rem;
+    font-weight: bold;
+    min-height: 2rem;
+    color: var(--secondary-color);
+    text-shadow: 0 0 10px rgba(3, 218, 198, 0.3);
+    animation: resultPulse 0.5s ease-out;
+}
+
+@keyframes resultPulse {
+    0% {
+        transform: scale(0.9);
+        opacity: 0;
+    }
+
+    50% {
+        transform: scale(1.1);
+    }
+
+    100% {
+        transform: scale(1);
+        opacity: 1;
+    }
+}
+
+.roulette-setup {
+    background-color: var(--surface-color);
+    padding: var(--spacing-md);
+    border-radius: var(--border-radius);
+}
+
+.roulette-list {
+    list-style: none;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: var(--spacing-md);
+}
+
+.roulette-list li {
+    background-color: #333;
+    padding: 6px 12px;
+    border-radius: 20px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 0.9rem;
+    animation: fadeIn 0.2s ease-out;
+}
+
+.roulette-list li button {
+    background: none;
+    border: none;
+    color: var(--text-secondary);
+    cursor: pointer;
+    font-size: 1.1rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+}
+
+.roulette-list li button:hover {
+    color: var(--error-color);
+    background-color: rgba(255, 255, 255, 0.1);
+}

@@ -20,6 +20,7 @@
         <nav>
             <button data-target="home" class="active">ホーム</button>
             <button data-target="users">ユーザー</button>
+            <button data-target="roulette">ルーレット</button>
             <button data-target="settings">設定</button>
         </nav>
 
@@ -245,6 +246,35 @@
                 <ul id="user-list" class="user-list">
                     <!-- Users will be injected here -->
                 </ul>
+            </section>
+
+            <!-- ROULETTE SECTION -->
+            <section id="roulette">
+                <h2>ルーレット</h2>
+
+                <div class="roulette-container">
+                    <div class="canvas-wrapper">
+                        <canvas id="roulette-canvas" width="300" height="300"></canvas>
+                        <div class="roulette-arrow">▼</div>
+                    </div>
+
+                    <div class="roulette-controls">
+                        <button id="spin-btn" class="btn-primary">スタート！</button>
+                        <div id="roulette-result" class="roulette-result"></div>
+                    </div>
+                </div>
+
+                <div class="roulette-setup">
+                    <h3>項目設定 <span style="font-size:0.8rem; font-weight:normal;">(最大20個)</span></h3>
+                    <div class="form-group" style="display:flex; gap:10px;">
+                        <input type="text" id="roulette-input" placeholder="項目を入力 (例: 東場, 南場...)">
+                        <button id="add-roulette-item" class="btn-secondary"
+                            style="width:auto; white-space:nowrap;">追加</button>
+                    </div>
+                    <ul id="roulette-list" class="roulette-list">
+                        <!-- Items injected here -->
+                    </ul>
+                </div>
             </section>
 
             <!-- USER DETAIL SECTION -->

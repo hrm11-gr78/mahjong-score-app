@@ -974,5 +974,312 @@ resetSettingsBtn.addEventListener('click', () => {
     }
 });
 
+// ====== ROULETTE FUNCTIONALITY ======
+
+// Roulette DOM Elements
+const rouletteCanvas = document.getElementById('roulette-canvas');
+const rouletteCtx = rouletteCanvas ? rouletteCanvas.getContext('2d') : null;
+const spinBtn = document.getElementById('spin-btn');
+const rouletteResult = document.getElementById('roulette-result');
+const rouletteInput = document.getElementById('roulette-input');
+const addRouletteItemBtn = document.getElementById('add-roulette-item');
+const rouletteList = document.getElementById('roulette-list');
+
+// Roulette State
+let rouletteItems = [];
+let isSpinning = false;
+let currentRotation = 0;
+
+// Color palette for roulette segments
+const rouletteColors = [
+    '#bb86fc', '#03dac6', '#cf6679', '#ffb74d',
+    '#8b86fc', '#03da86', '#cf8879', '#ffb78d',
+    '#9b86fc', '#03daa6', '#cf6699', '#ffb70d',
+    '#ab86fc', '#03dac0', '#cf66a9', '#ffb75d',
+    '#cb86fc', '#03da90', '#cf66b9', '#ffb79d'
+];
+
+// Initialize roulette if on roulette page
+function initRoulette() {
+    if (!rouletteCanvas) return;
+
+    // Load saved items from localStorage
+    const saved = localStorage.getItem('rouletteItems');
+    if (saved) {
+        try {
+            rouletteItems = JSON.parse(saved);
+        } catch (e) {
+            rouletteItems = [];
+        }
+    }
+
+    // Set default items if empty
+    if (rouletteItems.length === 0) {
+        rouletteItems = ['寿司', 'ラーメン', '焼肉', 'カレー'];
+        saveRouletteItems();
+    }
+
+    renderRouletteList();
+    drawRoulette();
+}
+
+// Save items to localStorage
+function saveRouletteItems() {
+    localStorage.setItem('rouletteItems', JSON.stringify(rouletteItems));
+}
+
+// Add roulette item
+if (addRouletteItemBtn) {
+    addRouletteItemBtn.addEventListener('click', () => {
+        const value = rouletteInput.value.trim();
+        if (!value) {
+            alert('項目を入力してください。');
+            return;
+        }
+
+        if (rouletteItems.length >= 20) {
+            alert('項目は最大20個までです。');
+            return;
+        }
+
+        if (rouletteItems.includes(value)) {
+            alert('同じ項目が既に存在します。');
+            return;
+        }
+
+        rouletteItems.push(value);
+        saveRouletteItems();
+        rouletteInput.value = '';
+        renderRouletteList();
+        drawRoulette();
+    });
+
+    // Allow Enter key to add item
+    rouletteInput.addEventListener('keypress', (e) => {
+        if (e.key === 'Enter') {
+            e.preventDefault();
+            addRouletteItemBtn.click();
+        }
+    });
+}
+
+// Remove roulette item
+function removeRouletteItem(index) {
+    rouletteItems.splice(index, 1);
+    saveRouletteItems();
+    renderRouletteList();
+    drawRoulette();
+}
+
+// Make removeRouletteItem globally accessible
+window.removeRouletteItem = removeRouletteItem;
+
+// Render roulette item list
+function renderRouletteList() {
+    if (!rouletteList) return;
+
+    rouletteList.innerHTML = '';
+    rouletteItems.forEach((item, index) => {
+        const li = document.createElement('li');
+        li.innerHTML = `
+            <span>${item}</span>
+            <button onclick="removeRouletteItem(${index})">×</button>
+        `;
+        rouletteList.appendChild(li);
+    });
+}
+
+// Draw roulette wheel
+function drawRoulette(rotation = 0) {
+    if (!rouletteCtx || rouletteItems.length === 0) return;
+
+    const centerX = rouletteCanvas.width / 2;
+    const centerY = rouletteCanvas.height / 2;
+    const radius = 140;
+
+    // Clear canvas
+    rouletteCtx.clearRect(0, 0, rouletteCanvas.width, rouletteCanvas.height);
+
+    const anglePerSegment = (2 * Math.PI) / rouletteItems.length;
+
+    // Draw segments
+    rouletteItems.forEach((item, index) => {
+        const startAngle = rotation + (index * anglePerSegment);
+        const endAngle = startAngle + anglePerSegment;
+
+        // Draw segment
+        rouletteCtx.beginPath();
+        rouletteCtx.moveTo(centerX, centerY);
+        rouletteCtx.arc(centerX, centerY, radius, startAngle, endAngle);
+        rouletteCtx.closePath();
+        rouletteCtx.fillStyle = rouletteColors[index % rouletteColors.length];
+        rouletteCtx.fill();
+        rouletteCtx.strokeStyle = '#1e1e1e';
+        rouletteCtx.lineWidth = 2;
+        rouletteCtx.stroke();
+
+        // Draw text
+        rouletteCtx.save();
+        rouletteCtx.translate(centerX, centerY);
+        rouletteCtx.rotate(startAngle + anglePerSegment / 2);
+        rouletteCtx.textAlign = 'center';
+        rouletteCtx.fillStyle = '#000';
+        rouletteCtx.font = 'bold 14px Inter, sans-serif';
+        rouletteCtx.fillText(item, radius * 0.65, 5);
+        rouletteCtx.restore();
+    });
+
+    // Draw center circle
+    rouletteCtx.beginPath();
+    rouletteCtx.arc(centerX, centerY, 20, 0, 2 * Math.PI);
+    rouletteCtx.fillStyle = '#bb86fc';
+    rouletteCtx.fill();
+    rouletteCtx.strokeStyle = '#1e1e1e';
+    rouletteCtx.lineWidth = 3;
+    rouletteCtx.stroke();
+}
+
+// Audio context for sound effects
+let audioContext = null;
+
+// Initialize audio context (requires user interaction)
+function initAudio() {
+    if (!audioContext) {
+        audioContext = new (window.AudioContext || window.webkitAudioContext)();
+    }
+}
+
+// Play tick sound
+function playTickSound() {
+    if (!audioContext) return;
+
+    const oscillator = audioContext.createOscillator();
+    const gainNode = audioContext.createGain();
+
+    oscillator.connect(gainNode);
+    gainNode.connect(audioContext.destination);
+
+    oscillator.frequency.value = 800;
+    oscillator.type = 'square';
+
+    gainNode.gain.setValueAtTime(0.1, audioContext.currentTime);
+    gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.05);
+
+    oscillator.start(audioContext.currentTime);
+    oscillator.stop(audioContext.currentTime + 0.05);
+}
+
+// Play result sound
+function playResultSound() {
+    if (!audioContext) return;
+
+    const oscillator = audioContext.createOscillator();
+    const gainNode = audioContext.createGain();
+
+    oscillator.connect(gainNode);
+    gainNode.connect(audioContext.destination);
+
+    // Rising tone
+    oscillator.frequency.setValueAtTime(400, audioContext.currentTime);
+    oscillator.frequency.exponentialRampToValueAtTime(800, audioContext.currentTime + 0.3);
+    oscillator.type = 'sine';
+
+    gainNode.gain.setValueAtTime(0.2, audioContext.currentTime);
+    gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.5);
+
+    oscillator.start(audioContext.currentTime);
+    oscillator.stop(audioContext.currentTime + 0.5);
+}
+
+// Spin roulette
+if (spinBtn) {
+    spinBtn.addEventListener('click', () => {
+        if (isSpinning) return;
+
+        if (rouletteItems.length < 2) {
+            alert('項目を2つ以上追加してください。');
+            return;
+        }
+
+        // Initialize audio on first interaction
+        initAudio();
+
+        isSpinning = true;
+        rouletteResult.textContent = '';
+        spinBtn.disabled = true;
+
+        // Extended spin duration: 5-8 seconds
+        const spinDuration = 5000 + Math.random() * 3000;
+        // More rotations for longer visual effect
+        const finalRotation = currentRotation + (Math.PI * 2 * 8) + (Math.random() * Math.PI * 2);
+        const startTime = Date.now();
+
+        let lastTickAngle = 0;
+        const tickInterval = (Math.PI * 2) / rouletteItems.length;
+
+        function animate() {
+            const elapsed = Date.now() - startTime;
+            const progress = Math.min(elapsed / spinDuration, 1);
+
+            // Enhanced easing function with more dramatic slowdown at the end
+            const easedProgress = easing(progress);
+            const previousRotation = currentRotation;
+            currentRotation = currentRotation + (finalRotation - currentRotation) * easedProgress;
+
+            drawRoulette(currentRotation);
+
+            // Play tick sound when crossing segment boundaries
+            const currentAngle = currentRotation % (Math.PI * 2);
+            const ticksPassed = Math.floor(currentAngle / tickInterval);
+            const lastTicksPassed = Math.floor(lastTickAngle / tickInterval);
+
+            if (ticksPassed !== lastTicksPassed && progress < 0.95) {
+                playTickSound();
+            }
+            lastTickAngle = currentAngle;
+
+            if (progress < 1) {
+                requestAnimationFrame(animate);
+            } else {
+                // Determine result
+                const normalizedRotation = (currentRotation % (Math.PI * 2) + Math.PI * 2) % (Math.PI * 2);
+                // Arrow points to top, so we calculate which segment is at the top
+                const anglePerSegment = (2 * Math.PI) / rouletteItems.length;
+                const winningIndex = Math.floor(((Math.PI * 2 - normalizedRotation) + anglePerSegment / 2) / anglePerSegment) % rouletteItems.length;
+
+                // Play result sound
+                playResultSound();
+
+                rouletteResult.textContent = `🎉 ${rouletteItems[winningIndex]} 🎉`;
+                isSpinning = false;
+                spinBtn.disabled = false;
+            }
+        }
+
+        // Enhanced easing function with dramatic slowdown at the end
+        function easing(t) {
+            // Cubic ease-in-out with extra slowdown at the end
+            if (t < 0.3) {
+                // Fast start
+                return 4 * t * t * t;
+            } else if (t < 0.7) {
+                // Medium speed
+                return 1 - Math.pow(-2 * (t - 0.5) + 1, 3) / 2;
+            } else {
+                // Dramatic slowdown
+                const localT = (t - 0.7) / 0.3;
+                return 0.85 + 0.15 * (1 - Math.pow(1 - localT, 4));
+            }
+        }
+
+        animate();
+    });
+}
+
+// Initialize roulette when page loads
+if (rouletteCanvas) {
+    initRoulette();
+}
+
 // Start
 init();
