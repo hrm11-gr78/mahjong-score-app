@@ -1015,7 +1015,7 @@ function initRoulette() {
 
     // Set default items if empty
     if (rouletteItems.length === 0) {
-        rouletteItems = ['寿司', 'ラーメン', '焼肉', 'カレー'];
+        rouletteItems = ['1', '2', '3', '4', '5', '6', '7'];
         saveRouletteItems();
     }
 
