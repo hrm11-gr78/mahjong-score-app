@@ -125,6 +125,24 @@ function navigateTo(targetId) {
             s.classList.add('active');
         }
     });
+
+    // Toggle Header Settings Button Visibility
+    const settingsBtn = document.getElementById('header-settings-btn');
+    if (settingsBtn) {
+        if (targetId === 'home') {
+            settingsBtn.style.display = 'block';
+        } else {
+            settingsBtn.style.display = 'none';
+        }
+    }
+}
+
+// --- DOM Elements ---
+const headerSettingsBtn = document.getElementById('header-settings-btn');
+if (headerSettingsBtn) {
+    headerSettingsBtn.addEventListener('click', () => {
+        navigateTo('settings');
+    });
 }
 
 // --- User Management ---
