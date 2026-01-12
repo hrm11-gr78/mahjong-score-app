@@ -56,6 +56,9 @@ function init() {
     setupScoreValidation();
     loadSettingsToForm();
     loadNewSetFormDefaults();
+
+    // Trigger initial navigation to set UI state (e.g. settings button visibility)
+    navigateTo('home');
 }
 
 function loadNewSetFormDefaults() {
@@ -129,7 +132,9 @@ function navigateTo(targetId) {
     // Toggle Header Settings Button Visibility
     const settingsBtn = document.getElementById('header-settings-btn');
     if (settingsBtn) {
-        if (targetId === 'home') {
+        // Show on main tabs (Home, Users, Roulette)
+        const mainTabs = ['home', 'users', 'roulette'];
+        if (mainTabs.includes(targetId)) {
             settingsBtn.style.display = 'block';
         } else {
             settingsBtn.style.display = 'none';
