@@ -473,3 +473,21 @@ input[type=number] {
     color: var(--error-color);
     background-color: rgba(255, 255, 255, 0.1);
 }
+/* Header Settings Button */
+#header-settings-btn {
+    position: absolute;
+    top: 50%;
+    right: 0;
+    transform: translateY(-50%);
+    background: none;
+    border: none;
+    font-size: 1.5rem;
+    cursor: pointer;
+    padding: 10px;
+    z-index: 200;
+    transition: transform 0.2s;
+}
+
+#header-settings-btn:hover {
+    transform: translateY(-50%) rotate(45deg);
+}

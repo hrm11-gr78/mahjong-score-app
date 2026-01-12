@@ -56,6 +56,9 @@ function init() {
     setupScoreValidation();
     loadSettingsToForm();
     loadNewSetFormDefaults();
+
+    // Trigger initial navigation to set UI state (e.g. settings button visibility)
+    navigateTo('home');
 }
 
 function loadNewSetFormDefaults() {
@@ -124,6 +127,26 @@ function navigateTo(targetId) {
         if (s.id === targetId) {
             s.classList.add('active');
         }
+    });
+
+    // Toggle Header Settings Button Visibility
+    const settingsBtn = document.getElementById('header-settings-btn');
+    if (settingsBtn) {
+        // Show on main tabs (Home, Users, Roulette)
+        const mainTabs = ['home', 'users', 'roulette'];
+        if (mainTabs.includes(targetId)) {
+            settingsBtn.style.display = 'block';
+        } else {
+            settingsBtn.style.display = 'none';
+        }
+    }
+}
+
+// --- DOM Elements ---
+const headerSettingsBtn = document.getElementById('header-settings-btn');
+if (headerSettingsBtn) {
+    headerSettingsBtn.addEventListener('click', () => {
+        navigateTo('settings');
     });
 }
 

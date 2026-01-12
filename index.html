@@ -13,15 +13,16 @@
 
 <body>
     <div id="app">
-        <header>
+        <header style="position: relative;">
             <h1>🀄 雀ログ</h1>
+            <button id="header-settings-btn" style="display: none;">⚙️</button>
         </header>
 
         <nav>
             <button data-target="home" class="active">ホーム</button>
             <button data-target="users">ユーザー</button>
             <button data-target="roulette">ルーレット</button>
-            <button data-target="settings">設定</button>
+            <!-- <button data-target="settings">設定</button> Removed as per user request -->
         </nav>
 
         <main>
