@@ -41,12 +41,16 @@ window.AppStorage.getSessions = function () {
     return data ? JSON.parse(data) : [];
 };
 
-window.AppStorage.createSession = function (date, playerNames) {
+window.AppStorage.createSession = function (date, playerNames, rules = null) {
     const sessions = window.AppStorage.getSessions();
+    // Use provided rules or fallback to current global settings
+    const sessionRules = rules || window.AppStorage.getSettings();
+
     const newSession = {
         id: Date.now(),
         date: date, // YYYY-MM-DD
         players: playerNames, // Array of 4 names
+        rules: sessionRules,
         games: []
     };
     sessions.unshift(newSession);
@@ -65,6 +69,33 @@ window.AppStorage.addGameToSession = function (sessionId, gameData) {
 
     if (sessionIndex !== -1) {
         sessions[sessionIndex].games.push(gameData);
+        localStorage.setItem(KEYS.SESSIONS, JSON.stringify(sessions));
+        return true;
+    }
+    return false;
+};
+
+window.AppStorage.updateGameInSession = function (sessionId, gameId, updatedGameData) {
+    const sessions = window.AppStorage.getSessions();
+    const sessionIndex = sessions.findIndex(s => s.id === Number(sessionId));
+
+    if (sessionIndex !== -1) {
+        const gameIndex = sessions[sessionIndex].games.findIndex(g => g.id === Number(gameId));
+        if (gameIndex !== -1) {
+            sessions[sessionIndex].games[gameIndex] = updatedGameData;
+            localStorage.setItem(KEYS.SESSIONS, JSON.stringify(sessions));
+            return true;
+        }
+    }
+    return false;
+};
+
+window.AppStorage.updateSession = function (sessionId, updates) {
+    const sessions = window.AppStorage.getSessions();
+    const sessionIndex = sessions.findIndex(s => s.id === Number(sessionId));
+
+    if (sessionIndex !== -1) {
+        sessions[sessionIndex] = { ...sessions[sessionIndex], ...updates };
         localStorage.setItem(KEYS.SESSIONS, JSON.stringify(sessions));
         return true;
     }
