@@ -56,6 +56,7 @@ function init() {
     setupScoreValidation();
     loadSettingsToForm();
     loadNewSetFormDefaults();
+    setupSessionFormToggles();
 
     // Trigger initial navigation to set UI state (e.g. settings button visibility)
     navigateTo('home');
@@ -165,6 +166,40 @@ function renderUserOptions() {
         if (currentVal && users.includes(currentVal)) {
             select.value = currentVal;
         }
+    });
+}
+
+function setupSessionFormToggles() {
+    document.querySelectorAll('.toggle-guest-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const targetId = btn.dataset.target; // e.g., "p1"
+            const wrapper = document.getElementById(`${targetId}-wrapper`);
+            const select = wrapper.querySelector('select');
+            const input = wrapper.querySelector('input');
+
+            if (select.style.display !== 'none') {
+                // Switch to Input
+                select.style.display = 'none';
+                select.removeAttribute('required'); // Remove required from hidden select
+
+                input.style.display = 'block';
+                input.setAttribute('required', ''); // Add required to visible input
+                input.focus();
+
+                btn.textContent = '📋'; // Change icon to "List"
+                btn.title = "リストから選択";
+            } else {
+                // Switch to Select
+                select.style.display = 'block';
+                select.setAttribute('required', ''); // Add required back to visible select
+
+                input.style.display = 'none';
+                input.removeAttribute('required'); // Remove required from hidden input
+
+                btn.textContent = '🖊️'; // Change icon to "Edit"
+                btn.title = "手動入力切替";
+            }
+        });
     });
 }
 
@@ -456,13 +491,31 @@ addUserBtn.addEventListener('click', () => {
 sessionSetupForm.addEventListener('submit', (e) => {
     e.preventDefault();
     const formData = new FormData(sessionSetupForm);
-    const date = formData.get('date') || sessionDateInput.value;
+    const getDate = formData.get('date') || sessionDateInput.value;
+
+    // Helper to get value
+    const getPlayerName = (id) => {
+        const wrapper = document.getElementById(`${id}-wrapper`);
+        const select = wrapper.querySelector('select');
+        const input = wrapper.querySelector('input');
+        if (select.style.display !== 'none') {
+            return select.value;
+        } else {
+            return input.value.trim();
+        }
+    };
+
     const players = [
-        formData.get('p1'),
-        formData.get('p2'),
-        formData.get('p3'),
-        formData.get('p4')
+        getPlayerName('p1'),
+        getPlayerName('p2'),
+        getPlayerName('p3'),
+        getPlayerName('p4')
     ];
+
+    if (players.some(p => !p)) {
+        alert("全ての対局者を選択または入力してください。");
+        return;
+    }
 
     if (new Set(players).size !== 4) {
         alert("同じユーザーを重複して選択することはできません！");
@@ -481,7 +534,7 @@ sessionSetupForm.addEventListener('submit', (e) => {
         tieBreaker: document.querySelector('input[name="newSetTieBreaker"]:checked').value
     };
 
-    const session = createSession(date, players, rules);
+    const session = createSession(getDate, players, rules);
     openSession(session.id);
 });
 

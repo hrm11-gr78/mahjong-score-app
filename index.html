@@ -37,18 +37,34 @@
                     <div class="form-group">
                         <label>対局者 (4名)</label>
                         <div class="score-grid">
-                            <select name="p1" required class="user-select">
-                                <option value="" disabled selected>選択...</option>
-                            </select>
-                            <select name="p2" required class="user-select">
-                                <option value="" disabled selected>選択...</option>
-                            </select>
-                            <select name="p3" required class="user-select">
-                                <option value="" disabled selected>選択...</option>
-                            </select>
-                            <select name="p4" required class="user-select">
-                                <option value="" disabled selected>選択...</option>
-                            </select>
+                            <div class="player-select-wrapper" id="p1-wrapper">
+                                <select name="p1" class="user-select" required>
+                                    <option value="" disabled selected>選択...</option>
+                                </select>
+                                <input type="text" name="p1_custom" class="user-input-custom" placeholder="名前..." style="display:none;">
+                                <button type="button" class="toggle-guest-btn" data-target="p1" title="手動入力切替">🖊️</button>
+                            </div>
+                            <div class="player-select-wrapper" id="p2-wrapper">
+                                <select name="p2" class="user-select" required>
+                                    <option value="" disabled selected>選択...</option>
+                                </select>
+                                <input type="text" name="p2_custom" class="user-input-custom" placeholder="名前..." style="display:none;">
+                                <button type="button" class="toggle-guest-btn" data-target="p2" title="手動入力切替">🖊️</button>
+                            </div>
+                            <div class="player-select-wrapper" id="p3-wrapper">
+                                <select name="p3" class="user-select" required>
+                                    <option value="" disabled selected>選択...</option>
+                                </select>
+                                <input type="text" name="p3_custom" class="user-input-custom" placeholder="名前..." style="display:none;">
+                                <button type="button" class="toggle-guest-btn" data-target="p3" title="手動入力切替">🖊️</button>
+                            </div>
+                            <div class="player-select-wrapper" id="p4-wrapper">
+                                <select name="p4" class="user-select" required>
+                                    <option value="" disabled selected>選択...</option>
+                                </select>
+                                <input type="text" name="p4_custom" class="user-input-custom" placeholder="名前..." style="display:none;">
+                                <button type="button" class="toggle-guest-btn" data-target="p4" title="手動入力切替">🖊️</button>
+                            </div>
                         </div>
                     </div>
                     <div class="form-group">
