@@ -491,3 +491,34 @@ input[type=number] {
 #header-settings-btn:hover {
     transform: translateY(-50%) rotate(45deg);
 }
+
+/* Player Select Wrapper */
+.player-select-wrapper {
+    display: flex;
+    gap: 5px;
+    align-items: center;
+}
+
+.player-select-wrapper select, 
+.player-select-wrapper input {
+    flex-grow: 1;
+    width: auto; /* Allow flex sort out width */
+}
+
+.toggle-guest-btn {
+    width: 40px;
+    padding: 10px;
+    font-size: 1.2rem;
+    background-color: var(--surface-color);
+    border: 1px solid #333;
+    color: var(--text-primary);
+    border-radius: var(--border-radius);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.toggle-guest-btn:hover {
+    border-color: var(--primary-color);
+}

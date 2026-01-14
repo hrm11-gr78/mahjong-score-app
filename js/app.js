@@ -1,8 +1,6 @@
-// Remove imports, use globals
-const { calculateResult, validateTotal } = window.Mahjong;
-const { getUsers, addUser, removeUser, getSessions, createSession, getSession, addGameToSession, updateGameInSession, updateSession, removeSession, removeGameFromSession, getSettings, saveSettings } = window.AppStorage;
+// Imports are handled by loaded scripts. window.AppStorage is async.
 
-// --- DOM Elements ---
+// --- DOM Elements (Global) ---
 const navButtons = document.querySelectorAll('nav button');
 const sections = document.querySelectorAll('section');
 const userSelects = document.querySelectorAll('.user-select');
@@ -22,7 +20,7 @@ const backToHomeBtn = document.getElementById('back-to-home');
 
 // Input
 const scoreForm = document.getElementById('score-form');
-const scoreInputs = document.querySelectorAll('input[type="number"]');
+const scoreInputs = document.querySelectorAll('#score-form input[name$="-score"]');
 const totalCheck = document.getElementById('total-check');
 const cancelInputBtn = document.getElementById('cancel-input');
 
@@ -39,79 +37,150 @@ const resetSettingsBtn = document.getElementById('reset-settings');
 const tieBreakerModal = document.getElementById('tie-breaker-modal');
 const tieBreakerOptions = document.getElementById('tie-breaker-options');
 
+// Roulette DOM Elements
+const rouletteCanvas = document.getElementById('roulette-canvas');
+const rouletteCtx = rouletteCanvas ? rouletteCanvas.getContext('2d') : null;
+const spinBtn = document.getElementById('spin-btn');
+const rouletteResult = document.getElementById('roulette-result');
+const rouletteInput = document.getElementById('roulette-input');
+const addRouletteItemBtn = document.getElementById('add-roulette-item');
+const rouletteList = document.getElementById('roulette-list');
+
 // State
 let currentSessionId = null;
 let editingGameId = null; // ID of the game being edited
 let pendingGameData = null; // Store data while waiting for tie-breaker
 
+// Roulette State
+let rouletteItems = [];
+let isSpinning = false;
+let currentRotation = 0;
+
+// Color palette for roulette segments
+const rouletteColors = [
+    '#bb86fc', '#03dac6', '#cf6679', '#ffb74d',
+    '#8b86fc', '#03da86', '#cf8879', '#ffb78d',
+    '#9b86fc', '#03daa6', '#cf6699', '#ffb70d',
+    '#ab86fc', '#03dac0', '#cf66a9', '#ffb75d',
+    '#cb86fc', '#03da90', '#cf66b9', '#ffb79d'
+];
+
 // --- Initialization ---
-function init() {
+async function init() {
+    // 1. Synchronous Setup (Immediate)
     // Set default date to today
-    sessionDateInput.valueAsDate = new Date();
+    if (sessionDateInput) {
+        sessionDateInput.valueAsDate = new Date();
+    }
 
-    renderUserOptions();
-    renderUserList();
-    renderSessionList();
-    setupNavigation();
+    // Setup UI interactivity immediately
     setupScoreValidation();
-    loadSettingsToForm();
-    loadNewSetFormDefaults();
 
-    // Trigger initial navigation to set UI state (e.g. settings button visibility)
+    // Trigger initial navigation to set UI state
     navigateTo('home');
+
+    // 2. Asynchronous Data Loading
+    try {
+        // Load data in parallel where possible or sequentially if needed
+        await Promise.all([
+            renderUserOptions(),
+            renderUserList(),
+            renderSessionList(),
+            loadSettingsToForm(),
+            loadNewSetFormDefaults()
+        ]);
+
+        // Initialize Roulette after base data, if on roulette page or needed
+        if (rouletteCanvas) {
+            await initRoulette();
+        }
+    } catch (e) {
+        console.error("Initialization / Data Loading Failed:", e);
+        // Do not alert here to avoid annoying popups if offline or slight delay
+        // Maybe show a "Connection Error" toast if strictly needed.
+    }
 }
 
-function loadNewSetFormDefaults() {
-    const settings = getSettings();
-    document.getElementById('new-set-start').value = settings.startScore;
-    document.getElementById('new-set-return').value = settings.returnScore;
-    document.getElementById('new-set-uma1').value = settings.uma[0];
-    document.getElementById('new-set-uma2').value = settings.uma[1];
-    document.getElementById('new-set-uma3').value = settings.uma[2];
-    document.getElementById('new-set-uma4').value = settings.uma[3];
+async function loadNewSetFormDefaults() {
+    if (!document.getElementById('new-set-start')) return;
+    try {
+        const settings = await window.AppStorage.getSettings();
+        document.getElementById('new-set-start').value = settings.startScore;
+        document.getElementById('new-set-return').value = settings.returnScore;
+        document.getElementById('new-set-uma1').value = settings.uma[0];
+        document.getElementById('new-set-uma2').value = settings.uma[1];
+        document.getElementById('new-set-uma3').value = settings.uma[2];
+        document.getElementById('new-set-uma4').value = settings.uma[3];
 
-    const radios = document.getElementsByName('newSetTieBreaker');
-    radios.forEach(r => {
-        if (r.value === settings.tieBreaker) r.checked = true;
-    });
+        const radios = document.getElementsByName('newSetTieBreaker');
+        radios.forEach(r => {
+            if (r.value === settings.tieBreaker) r.checked = true;
+        });
+    } catch (e) {
+        console.warn("Failed to load new set defaults", e);
+    }
 }
 
 // --- Navigation ---
 function setupNavigation() {
+    // 1. Direct Nav Buttons (Home, Users, Roulette)
     navButtons.forEach(btn => {
-        btn.addEventListener('click', () => {
+        // Remove old listeners by cloning
+        // Note: cloning removes listeners but also breaks references to the old DOM element if stored elsewhere.
+        // Since 'navButtons' is a static NodeList captured at load, we shouldn't clone if we want to reuse that list.
+        // Instead, just adding listener is fine as init() runs once.
+        // If we want to be super safe against double-init, we can check a flag.
+
+        if (btn.dataset.listenerAttached) return;
+
+        btn.addEventListener('click', (e) => {
+            e.preventDefault();
             const targetId = btn.dataset.target;
             navigateTo(targetId);
         });
+        btn.dataset.listenerAttached = 'true';
     });
 
-    backToHomeBtn.addEventListener('click', () => {
-        navigateTo('home');
-        renderSessionList(); // Refresh list
-    });
+    // 2. Specific Action Buttons
+    if (backToHomeBtn) {
+        // Use onclick to overwrite any existing listeners (simple safety)
+        backToHomeBtn.onclick = () => {
+            navigateTo('home');
+            renderSessionList();
+        };
+    }
 
-    newGameBtn.addEventListener('click', () => {
-        editingGameId = null; // Reset edit mode
-        navigateTo('input');
-        prepareInputForm();
-    });
+    if (newGameBtn) {
+        newGameBtn.onclick = () => {
+            editingGameId = null;
+            navigateTo('input');
+            prepareInputForm();
+        };
+    }
 
-    cancelInputBtn.addEventListener('click', () => {
-        editingGameId = null; // Reset edit mode
-        navigateTo('session-detail');
-    });
+    if (cancelInputBtn) {
+        cancelInputBtn.onclick = () => {
+            editingGameId = null;
+            navigateTo('session-detail');
+        };
+    }
 
-    sessionRateSelect.addEventListener('change', (e) => {
-        const newRate = Number(e.target.value);
-        if (currentSessionId) {
-            updateSession(currentSessionId, { rate: newRate });
-            const session = getSession(currentSessionId);
-            renderSessionTotal(session);
-        }
-    });
+    if (sessionRateSelect) {
+        // onchange is safer for single binding
+        sessionRateSelect.onchange = async (e) => {
+            const newRate = Number(e.target.value);
+            if (currentSessionId) {
+                await window.AppStorage.updateSession(currentSessionId, { rate: newRate });
+                const session = await window.AppStorage.getSession(currentSessionId);
+                renderSessionTotal(session);
+            }
+        };
+    }
 }
 
 function navigateTo(targetId) {
+    if (!targetId) return;
+
     // Update Buttons
     navButtons.forEach(b => {
         if (b.dataset.target === targetId) {
@@ -140,6 +209,55 @@ function navigateTo(targetId) {
             settingsBtn.style.display = 'none';
         }
     }
+
+    // Apply Action Restrictions
+    updateActionRestrictions();
+}
+
+/**
+ * Restrictions when no Device User is selected
+ */
+function updateActionRestrictions() {
+    const deviceUser = localStorage.getItem('deviceUser');
+    const isRestricted = !deviceUser;
+
+    // Elements to toggle
+    const sessionSetupForm = document.getElementById('session-setup-form');
+    const newGameBtn = document.getElementById('new-game-btn');
+    const spinBtn = document.getElementById('spin-btn');
+    const addRouletteItemBtn = document.getElementById('add-roulette-item');
+    const rouletteInput = document.getElementById('roulette-input');
+    const scoreForm = document.getElementById('score-form');
+    const settingsForm = document.getElementById('settings-form');
+
+    // Messages to toggle
+    const restrictionMsgs = document.querySelectorAll('.restricted-access-msg');
+
+    if (isRestricted) {
+        // Hide/Disable active elements
+        if (sessionSetupForm) sessionSetupForm.style.display = 'none';
+        if (newGameBtn) newGameBtn.style.display = 'none';
+        if (spinBtn) spinBtn.disabled = true;
+        if (addRouletteItemBtn) addRouletteItemBtn.disabled = true;
+        if (rouletteInput) rouletteInput.disabled = true;
+        if (scoreForm) scoreForm.style.display = 'none';
+        if (settingsForm) settingsForm.style.display = 'none';
+
+        // Show messages
+        restrictionMsgs.forEach(msg => msg.style.display = 'block');
+    } else {
+        // Show/Enable active elements
+        if (sessionSetupForm) sessionSetupForm.style.display = 'block';
+        if (newGameBtn) newGameBtn.style.display = 'block';
+        if (spinBtn) spinBtn.disabled = false;
+        if (addRouletteItemBtn) addRouletteItemBtn.disabled = false;
+        if (rouletteInput) rouletteInput.disabled = false;
+        if (scoreForm) scoreForm.style.display = 'block';
+        if (settingsForm) settingsForm.style.display = 'block';
+
+        // Hide messages
+        restrictionMsgs.forEach(msg => msg.style.display = 'none');
+    }
 }
 
 // --- DOM Elements ---
@@ -150,44 +268,200 @@ if (headerSettingsBtn) {
     });
 }
 
+const headerProfileBtn = document.getElementById('header-profile-btn');
+const userProfileModal = document.getElementById('user-profile-modal');
+const profileUserSelect = document.getElementById('profile-user-select');
+const closeProfileModalBtn = document.getElementById('close-profile-modal');
+const saveProfileUserBtn = document.getElementById('save-profile-user');
+
+if (headerProfileBtn) {
+    headerProfileBtn.addEventListener('click', async () => {
+        // Populate select with latest users
+        await renderUserOptions();
+
+        // Load current device user
+        const savedDeviceUser = localStorage.getItem('deviceUser');
+        if (profileUserSelect && savedDeviceUser) {
+            profileUserSelect.value = savedDeviceUser;
+        }
+
+        // Show modal
+        if (userProfileModal) {
+            userProfileModal.style.display = 'flex';
+        }
+    });
+}
+
+if (closeProfileModalBtn) {
+    closeProfileModalBtn.addEventListener('click', () => {
+        if (userProfileModal) {
+            userProfileModal.style.display = 'none';
+        }
+    });
+}
+
+if (saveProfileUserBtn) {
+    saveProfileUserBtn.addEventListener('click', async () => {
+        try {
+            if (profileUserSelect) {
+                const selectedUser = profileUserSelect.value;
+                if (selectedUser) {
+                    localStorage.setItem('deviceUser', selectedUser);
+                } else {
+                    localStorage.removeItem('deviceUser');
+                }
+
+                // Refresh UI (Don't block modal closing if these fail)
+                Promise.all([
+                    renderUserList(),
+                    renderSessionList()
+                ]).catch(err => console.error("UI Refresh Failed:", err));
+
+                updateActionRestrictions();
+            }
+        } catch (e) {
+            console.error("Save Profile Failed:", e);
+        } finally {
+            if (userProfileModal) {
+                userProfileModal.style.display = 'none';
+            }
+            alert('ユーザー設定を保存しました。');
+        }
+    });
+}
+
 // --- User Management ---
-function renderUserOptions() {
-    const users = getUsers();
-    userSelects.forEach(select => {
+async function renderUserOptions() {
+    const users = await window.AppStorage.getUsers();
+
+    // Update all user-select dropdowns (Game Setup & Settings)
+    // We target .user-select class.
+    const selects = document.querySelectorAll('.user-select');
+
+    selects.forEach(select => {
         const currentVal = select.value;
-        select.innerHTML = '<option value="" disabled selected>選択...</option>';
+        const isProfileUserSelect = select.id === 'profile-user-select';
+
+        // Reset options
+        if (isProfileUserSelect) {
+            select.innerHTML = '<option value="">(未選択)</option>';
+        } else {
+            select.innerHTML = '<option value="" disabled selected>選択...</option>';
+        }
+
         users.forEach(user => {
             const option = document.createElement('option');
             option.value = user;
             option.textContent = user;
             select.appendChild(option);
         });
+
+        // Restore value if still valid
         if (currentVal && users.includes(currentVal)) {
             select.value = currentVal;
         }
     });
+
+    // Special handling for Device User Select restoration from localStorage
+    const deviceUserSelect = document.getElementById('device-user-select');
+    if (deviceUserSelect) {
+        const savedDeviceUser = localStorage.getItem('deviceUser');
+        if (savedDeviceUser && users.includes(savedDeviceUser)) {
+            deviceUserSelect.value = savedDeviceUser;
+        }
+    }
 }
 
-function renderUserList() {
-    const users = getUsers();
+function setupSessionFormToggles() {
+    document.querySelectorAll('.toggle-guest-btn').forEach(btn => {
+        // Remove old listener (simple way is to clone, but we use robust "listenerAttached" check now globaly if needed)
+        // Here we can just assume it's fine or do the check.
+        if (btn.dataset.listenerAttached) return;
+
+        btn.addEventListener('click', () => {
+            const targetId = btn.dataset.target; // e.g., "p1"
+            const wrapper = document.getElementById(`${targetId}-wrapper`);
+            const select = wrapper.querySelector('select');
+            const input = wrapper.querySelector('input');
+
+            if (select.style.display !== 'none') {
+                // Switch to Input
+                select.style.display = 'none';
+                select.removeAttribute('required'); // Remove required from hidden select
+
+                input.style.display = 'block';
+                input.setAttribute('required', ''); // Add required to visible input
+                input.focus();
+
+                btn.textContent = '📋'; // Change icon to "List"
+                btn.title = "リストから選択";
+            } else {
+                // Switch to Select
+                select.style.display = 'block';
+                select.setAttribute('required', ''); // Add required back to visible select
+
+                input.style.display = 'none';
+                input.removeAttribute('required'); // Remove required from hidden input
+
+                btn.textContent = '🖊️'; // Change icon to "Edit"
+                btn.title = "手動入力切替";
+            }
+        });
+        btn.dataset.listenerAttached = 'true';
+    });
+}
+
+async function renderUserList() {
+    if (!userList) return;
+    const users = await window.AppStorage.getUsers();
+
+    // Get Device User
+    const deviceUser = localStorage.getItem('deviceUser');
+
     userList.innerHTML = '';
     users.forEach(user => {
         const li = document.createElement('li');
+
+        let deleteBtnHtml = '';
+
+        // Show delete button ONLY IF:
+        // 1. A device user IS set
+        // AND
+        // (The listed user IS the device user OR the device user is "ヒロム")
+        if (deviceUser && (deviceUser === user || deviceUser === 'ヒロム')) {
+            deleteBtnHtml = `<button class="btn-danger" data-user="${user}">削除</button>`;
+        } else {
+            deleteBtnHtml = ``;
+        }
+
         li.innerHTML = `
             <span class="user-name-link" style="cursor:pointer; text-decoration:underline;">${user}</span>
-            <button class="btn-danger" data-user="${user}">削除</button>
+            ${deleteBtnHtml}
         `;
         li.querySelector('.user-name-link').addEventListener('click', () => openUserDetail(user));
         userList.appendChild(li);
     });
 
     document.querySelectorAll('.btn-danger').forEach(btn => {
-        btn.addEventListener('click', (e) => {
+        btn.addEventListener('click', async (e) => {
             const user = e.target.dataset.user;
+            // Double check logic (though UI hidden is first line of defense)
+            const currentDeviceUser = localStorage.getItem('deviceUser');
+            // Admin "ヒロム" can delete anyone
+            if (currentDeviceUser && currentDeviceUser !== user && currentDeviceUser !== 'ヒロム') {
+                alert("他のユーザーを削除する権限がありません。\n設定画面で「この端末のユーザー」を確認してください。");
+                return;
+            }
+
             if (confirm(`ユーザー "${user}" を削除しますか？`)) {
-                removeUser(user);
-                renderUserOptions();
-                renderUserList();
+                await window.AppStorage.removeUser(user);
+                // If I deleted myself, clear device user
+                if (currentDeviceUser === user) {
+                    localStorage.removeItem('deviceUser');
+                }
+
+                await renderUserOptions();
+                await renderUserList();
             }
         });
     });
@@ -199,20 +473,22 @@ const userTotalScore = document.getElementById('user-total-score');
 const userHistoryList = document.getElementById('user-history-list');
 const backToUsersBtn = document.getElementById('back-to-users');
 
-backToUsersBtn.addEventListener('click', () => {
-    navigateTo('users');
-});
+if (backToUsersBtn) {
+    backToUsersBtn.addEventListener('click', () => {
+        navigateTo('users');
+    });
+}
 
-function openUserDetail(userName) {
+async function openUserDetail(userName) {
     userDetailName.textContent = userName;
-    renderUserDetail(userName);
+    await renderUserDetail(userName);
     navigateTo('user-detail');
 }
 
 window.openUserDetail = openUserDetail;
 
-function renderUserDetail(userName) {
-    const sessions = getSessions();
+async function renderUserDetail(userName) {
+    const sessions = await window.AppStorage.getSessions();
     // Filter sessions where user participated
     const userSessions = sessions.filter(s => s.players.includes(userName));
 
@@ -265,8 +541,14 @@ function renderUserDetail(userName) {
             }
         });
 
+        const currentDeviceUser = localStorage.getItem('deviceUser');
+        const isParticipantOrAdmin = currentDeviceUser === 'ヒロム' || (Array.isArray(session.players) && session.players.includes(currentDeviceUser));
+
+        const rowStyle = isParticipantOrAdmin ? 'style="cursor:pointer;"' : '';
+        const rowAction = isParticipantOrAdmin ? `onclick="openSession(${session.id})"` : '';
+
         html += `
-            <tr style="cursor:pointer;" onclick="openSession(${session.id})">
+            <tr ${rowStyle} ${rowAction}>
                 <td>${session.date}</td>
                 <td class="${scoreClass}">${scoreStr}</td>
                 ${amountHtml}
@@ -325,7 +607,7 @@ function renderUserDetail(userName) {
 
     // Display cumulative amount on the score card
     let amountElement = document.getElementById('user-total-amount');
-    if (!amountElement) {
+    if (!amountElement && scoreCard) {
         // Create the element if it doesn't exist
         const scoreCardContent = scoreCard.querySelector('[style*="z-index: 1"]');
         if (scoreCardContent) {
@@ -382,7 +664,7 @@ function renderUserDetail(userName) {
 
     // Display rank stats on the score card
     let statsElement = document.getElementById('user-rank-stats');
-    if (!statsElement) {
+    if (!statsElement && scoreCard) {
         const scoreCardContent = scoreCard.querySelector('[style*="z-index: 1"]');
         if (scoreCardContent) {
             const statsDiv = document.createElement('div');
@@ -420,9 +702,15 @@ function renderUserDetail(userName) {
                     <div style="font-size: 1.5rem; font-weight: bold;">${totalRankCounts[3]}</div>
                 </div>
             </div>
-            <div style="margin-top: 15px; font-size: 1.2rem;">
-                <span style="color: #e2e8f0; margin-right: 10px;">平均順位:</span>
-                <span style="font-weight: 800; font-size: 1.8rem;">${averageRank}</span>
+            <div style="margin-top: 15px; font-size: 1.2rem; display: flex; justify-content: center; align-items: center; gap: 20px;">
+                <div>
+                    <span style="color: #e2e8f0; margin-right: 10px;">対戦数:</span>
+                    <span style="font-weight: 800; font-size: 1.8rem;">${totalGames}</span>
+                </div>
+                <div>
+                    <span style="color: #e2e8f0; margin-right: 10px;">平均順位:</span>
+                    <span style="font-weight: 800; font-size: 1.8rem;">${averageRank}</span>
+                </div>
             </div>
         `;
     }
@@ -430,70 +718,116 @@ function renderUserDetail(userName) {
     userHistoryList.innerHTML = html;
 }
 
-addUserBtn.addEventListener('click', () => {
-    const name = newUserNameInput.value.trim();
-    if (name) {
-        // Check limit
-        const currentUsers = getUsers();
-        if (currentUsers.length >= 30) {
-            alert('ユーザー登録数の上限（30名）に達しました。');
-            return;
-        }
+if (addUserBtn) {
+    addUserBtn.addEventListener('click', async () => {
+        const name = newUserNameInput.value.trim();
+        if (name) {
+            // Check limit
+            const currentUsers = await window.AppStorage.getUsers();
+            if (currentUsers.length >= 30) {
+                alert('ユーザー登録数の上限（30名）に達しました。');
+                return;
+            }
 
-        if (addUser(name)) {
-            newUserNameInput.value = '';
-            renderUserOptions();
-            renderUserList();
-            alert(`ユーザー "${name}" を追加しました！`);
-        } else {
-            alert('そのユーザーは既に存在します！');
+            if (await window.AppStorage.addUser(name)) {
+                newUserNameInput.value = '';
+                await renderUserOptions();
+                await renderUserList();
+                alert(`ユーザー "${name}" を追加しました！`);
+            } else {
+                alert('そのユーザーは既に存在します！');
+            }
         }
-    }
-});
+    });
+}
 
 // --- Session Management ---
 
-sessionSetupForm.addEventListener('submit', (e) => {
-    e.preventDefault();
-    const formData = new FormData(sessionSetupForm);
-    const date = formData.get('date') || sessionDateInput.value;
-    const players = [
-        formData.get('p1'),
-        formData.get('p2'),
-        formData.get('p3'),
-        formData.get('p4')
-    ];
+if (sessionSetupForm) {
+    sessionSetupForm.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const formData = new FormData(sessionSetupForm);
+        const getDate = formData.get('date') || sessionDateInput.value;
 
-    if (new Set(players).size !== 4) {
-        alert("同じユーザーを重複して選択することはできません！");
-        return;
+        // Helper to get value
+        const getPlayerName = (id) => {
+            const wrapper = document.getElementById(`${id}-wrapper`);
+            const select = wrapper.querySelector('select');
+            const input = wrapper.querySelector('input');
+            if (select.style.display !== 'none') {
+                return select.value;
+            } else {
+                return input.value.trim();
+            }
+        };
+
+        const players = [
+            getPlayerName('p1'),
+            getPlayerName('p2'),
+            getPlayerName('p3'),
+            getPlayerName('p4')
+        ];
+
+        if (players.some(p => !p)) {
+            alert("全ての対局者を選択または入力してください。");
+            return;
+        }
+
+        if (new Set(players).size !== 4) {
+            alert("同じユーザーを重複して選択することはできません！");
+            return;
+        }
+
+        const rules = {
+            startScore: Number(document.getElementById('new-set-start').value),
+            returnScore: Number(document.getElementById('new-set-return').value),
+            uma: [
+                Number(document.getElementById('new-set-uma1').value),
+                Number(document.getElementById('new-set-uma2').value),
+                Number(document.getElementById('new-set-uma3').value),
+                Number(document.getElementById('new-set-uma4').value)
+            ],
+            tieBreaker: document.querySelector('input[name="newSetTieBreaker"]:checked').value
+        };
+
+        const session = await window.AppStorage.createSession(getDate, players, rules);
+        await openSession(session.id);
+    });
+}
+
+async function renderSessionList() {
+    if (!sessionList) return;
+    const sessions = await window.AppStorage.getSessions();
+
+    // Filter by Device User
+    const deviceUser = localStorage.getItem('deviceUser');
+    let filteredSessions = sessions;
+
+    // Filtering logic:
+    if (deviceUser === 'ヒロム') {
+        // Admin sees everything
+        filteredSessions = sessions;
+    } else if (deviceUser) {
+        // Normal user sees only their games
+        filteredSessions = sessions.filter(s => Array.isArray(s.players) && s.players.includes(deviceUser));
+    } else {
+        // No user selected: show nothing
+        filteredSessions = [];
     }
 
-    const rules = {
-        startScore: Number(document.getElementById('new-set-start').value),
-        returnScore: Number(document.getElementById('new-set-return').value),
-        uma: [
-            Number(document.getElementById('new-set-uma1').value),
-            Number(document.getElementById('new-set-uma2').value),
-            Number(document.getElementById('new-set-uma3').value),
-            Number(document.getElementById('new-set-uma4').value)
-        ],
-        tieBreaker: document.querySelector('input[name="newSetTieBreaker"]:checked').value
-    };
-
-    const session = createSession(date, players, rules);
-    openSession(session.id);
-});
-
-function renderSessionList() {
-    const sessions = getSessions();
     sessionList.innerHTML = '';
-    if (sessions.length === 0) {
-        sessionList.innerHTML = '<p class="text-center" style="color: var(--text-secondary)">セット履歴がありません。</p>';
+    if (filteredSessions.length === 0) {
+        let msg = 'セット履歴がありません。';
+        if (!deviceUser) {
+            msg = 'セット履歴を表示するには、ユーザー設定が必要です。';
+        } else if (deviceUser !== 'ヒロム') {
+            msg = '参加したセット履歴がありません。';
+        }
+        sessionList.innerHTML = `<p class="text-center" style="color: var(--text-secondary)">${msg}</p>`;
         return;
     }
 
-    sessions.forEach(session => {
+    filteredSessions.forEach(session => {
         const div = document.createElement('div');
         div.className = 'history-card';
         div.style.cursor = 'pointer';
@@ -502,30 +836,35 @@ function renderSessionList() {
                 <strong>${session.date}</strong>
                 <div>
                     <span style="margin-right: 10px;">${session.games.length} 対局</span>
-                    <button class="btn-danger btn-sm delete-session-btn" data-id="${session.id}" style="padding: 2px 8px; font-size: 0.8rem;">削除</button>
+                    ${localStorage.getItem('deviceUser') === 'ヒロム'
+                ? `<button class="btn-danger btn-sm delete-session-btn" data-id="${session.id}" style="padding: 2px 8px; font-size: 0.8rem;">削除</button>`
+                : ''}
                 </div>
             </div>
             <div style="font-size:0.9rem; color:var(--text-secondary); margin-top:4px;">
-                ${session.players.join(', ')}
+                ${(session.players || []).join(', ')}
             </div>
         `;
 
         // Card click for navigation
         div.addEventListener('click', (e) => {
-            // Prevent navigation if delete button was clicked
-            if (!e.target.classList.contains('delete-session-btn')) {
+            // Prevent navigation if delete button or parts of it were clicked
+            if (!e.target.closest('.delete-session-btn')) {
                 openSession(session.id);
             }
         });
 
         // Delete button click
-        div.querySelector('.delete-session-btn').addEventListener('click', (e) => {
-            e.stopPropagation(); // Prevent card click
-            if (confirm('このセットを削除しますか？\nこの操作は取り消せません。')) {
-                removeSession(session.id);
-                renderSessionList();
-            }
-        });
+        const deleteSessionBtn = div.querySelector('.delete-session-btn');
+        if (deleteSessionBtn) {
+            deleteSessionBtn.addEventListener('click', async (e) => {
+                e.stopPropagation(); // Prevent card click
+                if (confirm('このセットを削除しますか？\nこの操作は取り消せません。')) {
+                    await window.AppStorage.removeSession(session.id);
+                    await renderSessionList();
+                }
+            });
+        }
 
         sessionList.appendChild(div);
     });
@@ -533,24 +872,28 @@ function renderSessionList() {
 
 window.openSession = openSession;
 
-function openSession(sessionId) {
+async function openSession(sessionId) {
     currentSessionId = sessionId;
-    const session = getSession(sessionId);
+    const session = await window.AppStorage.getSession(sessionId);
     if (!session) return;
 
-    sessionTitle.textContent = `${session.date}`;
-    sessionRateSelect.value = session.rate || 0;
+    if (sessionTitle) sessionTitle.textContent = `${session.date}`;
+    if (sessionRateSelect) sessionRateSelect.value = session.rate || 0;
 
-    renderSessionTotal(session);
+    await renderSessionTotal(session);
     renderScoreChart(session);
     renderGameList(session);
     navigateTo('session-detail');
 }
 
-function renderSessionTotal(session) {
+async function renderSessionTotal(session) {
+    if (!sessionTotalTable) return;
     // Calculate totals and rank counts
     const totals = {};
     const rankCounts = {}; // { playerName: [1st, 2nd, 3rd, 4th] }
+
+    // Fetch registered users to check for guests
+    const registeredUsers = await window.AppStorage.getUsers();
 
     session.players.forEach(p => {
         totals[p] = 0;
@@ -607,10 +950,16 @@ function renderSessionTotal(session) {
         const c3 = counts[2];
         const c4 = counts[3];
 
+        // Check if player is registered
+        const isRegistered = registeredUsers.includes(p);
+        const nameHtml = isRegistered
+            ? `<span style="cursor:pointer; text-decoration:underline;" onclick="openUserDetail('${p}')">${p}</span>`
+            : `<span>${p}</span>`;
+
         html += `
             <tr>
                 <td>${i + 1}</td>
-                <td><span style="cursor:pointer; text-decoration:underline;" onclick="openUserDetail('${p}')">${p}</span></td>
+                <td>${nameHtml}</td>
                 <td class="${scoreClass}" style="font-weight:bold;">${scoreStr}</td>
                 ${amountHtml}
                 <td>${c1}</td>
@@ -627,7 +976,9 @@ function renderSessionTotal(session) {
 let scoreChart = null;
 
 function renderScoreChart(session) {
-    const ctx = document.getElementById('score-chart').getContext('2d');
+    const canvas = document.getElementById('score-chart');
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
 
     // Destroy existing chart if any
     if (scoreChart) {
@@ -667,45 +1018,48 @@ function renderScoreChart(session) {
         };
     });
 
-    scoreChart = new Chart(ctx, {
-        type: 'line',
-        data: {
-            labels: labels,
-            datasets: datasets
-        },
-        options: {
-            responsive: true,
-            maintainAspectRatio: false,
-            scales: {
-                y: {
-                    grid: {
-                        color: '#333'
+    if (typeof Chart !== 'undefined') {
+        scoreChart = new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: labels,
+                datasets: datasets
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                scales: {
+                    y: {
+                        grid: {
+                            color: '#333'
+                        },
+                        ticks: {
+                            color: '#b0b0b0'
+                        }
                     },
-                    ticks: {
-                        color: '#b0b0b0'
+                    x: {
+                        grid: {
+                            color: '#333'
+                        },
+                        ticks: {
+                            color: '#b0b0b0'
+                        }
                     }
                 },
-                x: {
-                    grid: {
-                        color: '#333'
-                    },
-                    ticks: {
-                        color: '#b0b0b0'
-                    }
-                }
-            },
-            plugins: {
-                legend: {
-                    labels: {
-                        color: '#ffffff'
+                plugins: {
+                    legend: {
+                        labels: {
+                            color: '#ffffff'
+                        }
                     }
                 }
             }
-        }
-    });
+        });
+    }
 }
 
 function renderGameList(session) {
+    if (!gameList) return;
     gameList.innerHTML = '';
     if (session.games.length === 0) {
         gameList.innerHTML = '<p class="text-center" style="color: var(--text-secondary)">まだ対局がありません。</p>';
@@ -738,8 +1092,12 @@ function renderGameList(session) {
             <div class="history-header">
                 <span>Game ${session.games.length - index}</span>
                 <div>
-                    <button class="btn-secondary btn-sm edit-game-btn" data-id="${game.id}" style="padding: 2px 8px; font-size: 0.8rem; margin-right: 5px;">修正</button>
-                    <button class="btn-danger btn-sm delete-game-btn" data-id="${game.id}" style="padding: 2px 8px; font-size: 0.8rem;">削除</button>
+                    ${localStorage.getItem('deviceUser') === 'ヒロム'
+                ? `
+                        <button class="btn-secondary btn-sm edit-game-btn" data-id="${game.id}" style="padding: 2px 8px; font-size: 0.8rem; margin-right: 5px;">修正</button>
+                        <button class="btn-danger btn-sm delete-game-btn" data-id="${game.id}" style="padding: 2px 8px; font-size: 0.8rem;">削除</button>
+                        `
+                : ''}
                 </div>
             </div>
             <table class="history-table">
@@ -757,19 +1115,25 @@ function renderGameList(session) {
             </table>
         `;
 
-        card.querySelector('.edit-game-btn').addEventListener('click', () => {
-            editingGameId = game.id;
-            navigateTo('input');
-            prepareInputForm(game);
-        });
+        const editBtn = card.querySelector('.edit-game-btn');
+        if (editBtn) {
+            editBtn.addEventListener('click', () => {
+                editingGameId = game.id;
+                navigateTo('input');
+                prepareInputForm(game);
+            });
+        }
 
-        card.querySelector('.delete-game-btn').addEventListener('click', () => {
-            if (confirm('この対局結果を削除しますか？')) {
-                removeGameFromSession(session.id, game.id);
-                // Refresh session view
-                openSession(session.id);
-            }
-        });
+        const deleteGameBtn = card.querySelector('.delete-game-btn');
+        if (deleteGameBtn) {
+            deleteGameBtn.addEventListener('click', async () => {
+                if (confirm('この対局結果を削除しますか？')) {
+                    await window.AppStorage.removeGameFromSession(session.id, game.id);
+                    // Refresh session view
+                    await openSession(session.id);
+                }
+            });
+        }
 
         gameList.appendChild(card);
     });
@@ -777,8 +1141,8 @@ function renderGameList(session) {
 
 // --- Score Input ---
 
-function prepareInputForm(gameToEdit = null) {
-    const session = getSession(currentSessionId);
+async function prepareInputForm(gameToEdit = null) {
+    const session = await window.AppStorage.getSession(currentSessionId);
     if (!session) return;
 
     //Set player names
@@ -798,157 +1162,94 @@ function prepareInputForm(gameToEdit = null) {
             const pName = session.players[i];
             const pData = gameToEdit.players.find(p => p.name === pName);
             if (pData) {
-                // rawScore is 25000 -> input 250
-                const inputVal = pData.rawScore / 100;
-                const input = document.querySelector(`input[name="p${i + 1}-score"]`);
-                if (input) input.value = inputVal;
+                // pData.rawScore might be e.g. 25000
+                const scoreInput = document.querySelector(`input[name="p${i + 1}-score"]`);
+                if (scoreInput) {
+                    // Display as 250 because suffix is 00
+                    scoreInput.value = Math.floor(pData.rawScore / 100);
+                }
             }
         }
+        totalCheck.textContent = "合計: 100000";
+        totalCheck.className = "total-check valid";
+    } else {
+        totalCheck.textContent = "合計: 0";
+        totalCheck.className = "total-check";
     }
-
-    // Calculate total
-    calculateTotal();
 }
 
-function setupScoreValidation() {
-    scoreInputs.forEach(input => {
-        input.addEventListener('input', calculateTotal);
-    });
-}
+// Real-time validation
+scoreInputs.forEach(input => {
+    input.addEventListener('input', validateScoreInput);
+});
 
-function calculateTotal() {
-    let total = 0;
+function validateScoreInput() {
+    let currentTotal = 0;
     scoreInputs.forEach(input => {
-        // Only count inputs inside the score form
-        if (scoreForm.contains(input)) {
-            // Multiply by 100 because input is "250" -> "25000"
-            const val = Number(input.value) || 0;
-            total += val * 100;
+        if (input.value) {
+            currentTotal += Number(input.value) * 100;
         }
     });
 
-    totalCheck.textContent = `合計: ${total}`;
-    if (total === 100000) {
-        totalCheck.className = 'total-check valid';
-        totalCheck.textContent += ' (OK)';
+    const difference = currentTotal - 100000;
+    let displayText = `合計: ${currentTotal.toLocaleString()}`;
+
+    if (difference !== 0) {
+        const absDiff = Math.abs(difference);
+        const diffStr = difference > 0 ? `+${absDiff.toLocaleString()}` : `-${absDiff.toLocaleString()}`;
+        displayText += ` (${diffStr})`;
+    }
+
+    totalCheck.textContent = displayText;
+
+    if (currentTotal === 100000) {
+        totalCheck.className = "total-check valid";
         return true;
     } else {
-        totalCheck.className = 'total-check invalid';
-        totalCheck.textContent += ' (100,000点である必要があります)';
+        totalCheck.className = "total-check invalid";
         return false;
     }
 }
 
-scoreForm.addEventListener('submit', (e) => {
-    e.preventDefault();
+// Settings form
+if (settingsForm) {
+    settingsForm.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const settings = {
+            startScore: Number(document.getElementById('set-start').value),
+            returnScore: Number(document.getElementById('set-return').value),
+            uma: [
+                Number(document.getElementById('set-uma1').value),
+                Number(document.getElementById('set-uma2').value),
+                Number(document.getElementById('set-uma3').value),
+                Number(document.getElementById('set-uma4').value)
+            ],
+            tieBreaker: document.querySelector('input[name="tieBreaker"]:checked').value
+        };
+        await window.AppStorage.saveSettings(settings);
 
-    if (!calculateTotal()) {
-        if (!confirm("合計点が100,000点ではありません。続行しますか？")) {
-            return;
-        }
-    }
-
-    const formData = new FormData(scoreForm);
-    const rawScores = [];
-    const playerNames = [];
-
-    for (let i = 1; i <= 4; i++) {
-        const name = formData.get(`p${i}-name`); // Hidden input
-        const inputVal = Number(formData.get(`p${i}-score`));
-        const score = inputVal * 100; // Convert 250 -> 25000
-
-        playerNames.push(name);
-        rawScores.push(score);
-    }
-
-    // Get session rules
-    const session = getSession(currentSessionId);
-    // Fallback to global settings if session has no rules (legacy)
-    const settings = session.rules || getSettings();
-
-    // Initial calculation (no priority map)
-    const results = calculateResult(rawScores, settings);
-
-    if (results.needsTieBreaker) {
-        // Handle Tie Breaker
-        pendingGameData = { rawScores, playerNames, settings };
-        showTieBreakerModal(results.tiedGroups, playerNames);
-    } else {
-        // Success
-        finalizeGame(results, playerNames);
-    }
-});
-
-function showTieBreakerModal(tiedGroups, playerNames) {
-    // For now, handle the first group only (rare to have multiple tie groups)
-    // If multiple groups exist, we could handle them sequentially, but let's assume one for simplicity or just handle the first one recursively.
-    // Actually, let's just handle the first group found.
-    const group = tiedGroups[0]; // Array of indices [0, 1]
-
-    tieBreakerOptions.innerHTML = '';
-    group.forEach(index => {
-        const btn = document.createElement('button');
-        btn.textContent = playerNames[index];
-        btn.onclick = () => resolveTie(group, index);
-        tieBreakerOptions.appendChild(btn);
+        alert('設定を保存しました。');
     });
-
-    tieBreakerModal.style.display = 'flex';
 }
 
-function resolveTie(group, winnerIndex) {
-    // Create priority map
-    // Winner gets 1, others get 0 (or -1). 
-    // Since we only resolve one winner from the group, if there are 3 tied, we might need more logic.
-    // But usually it's 2 people. 
-    // If 3 people tie, picking one as "top" leaves 2 tied. 
-    // Simpler approach: Just give the selected one +1 priority.
-
-    const priorityMap = pendingGameData.priorityMap || {};
-    priorityMap[winnerIndex] = (priorityMap[winnerIndex] || 0) + 1;
-
-    pendingGameData.priorityMap = priorityMap;
-
-    // Re-calculate
-    const results = calculateResult(pendingGameData.rawScores, pendingGameData.settings, priorityMap);
-
-    if (results.needsTieBreaker) {
-        // Still tied (e.g. 3 people tied, picked 1st, now 2nd/3rd are tied)
-        showTieBreakerModal(results.tiedGroups, pendingGameData.playerNames);
-    } else {
-        tieBreakerModal.style.display = 'none';
-        finalizeGame(results, pendingGameData.playerNames);
-        pendingGameData = null;
-    }
+if (resetSettingsBtn) {
+    resetSettingsBtn.addEventListener('click', async () => {
+        if (confirm('設定を初期値に戻しますか？')) {
+            const DEFAULT_SETTINGS = {
+                startScore: 25000,
+                returnScore: 30000,
+                uma: [30, 10, -10, -30],
+                tieBreaker: 'priority'
+            };
+            await window.AppStorage.saveSettings(DEFAULT_SETTINGS);
+            await loadSettingsToForm();
+            alert('設定を初期化しました。');
+        }
+    });
 }
 
-function finalizeGame(results, playerNames) {
-    const gamePlayers = results.map(r => ({
-        ...r,
-        name: playerNames[r.index]
-    }));
-
-    const gameData = {
-        id: editingGameId || Date.now(), // Use existing ID if editing
-        players: gamePlayers
-    };
-
-    if (editingGameId) {
-        updateGameInSession(currentSessionId, editingGameId, gameData);
-        editingGameId = null; // Reset
-        alert("対局結果を修正しました。");
-    } else {
-        addGameToSession(currentSessionId, gameData);
-    }
-
-    // Return to detail
-    openSession(currentSessionId);
-}
-
-// --- Settings ---
-
-function loadSettingsToForm() {
-    const settings = getSettings();
+async function loadSettingsToForm() {
+    const settings = await window.AppStorage.getSettings();
     document.getElementById('set-start').value = settings.startScore;
     document.getElementById('set-return').value = settings.returnScore;
     document.getElementById('set-uma1').value = settings.uma[0];
@@ -956,104 +1257,164 @@ function loadSettingsToForm() {
     document.getElementById('set-uma3').value = settings.uma[2];
     document.getElementById('set-uma4').value = settings.uma[3];
 
-    // Radio buttons
     const radios = document.getElementsByName('tieBreaker');
     radios.forEach(r => {
         if (r.value === settings.tieBreaker) r.checked = true;
     });
 }
 
-settingsForm.addEventListener('submit', (e) => {
-    e.preventDefault();
+function setupScoreValidation() {
+    // Initial validation setup is handled by event listeners above
+}
 
-    const tieBreakerVal = document.querySelector('input[name="tieBreaker"]:checked').value;
+// --- Score Submission ---
+if (scoreForm) {
+    scoreForm.addEventListener('submit', async (e) => {
+        e.preventDefault();
 
-    const settings = {
-        startScore: Number(document.getElementById('set-start').value),
-        returnScore: Number(document.getElementById('set-return').value),
-        uma: [
-            Number(document.getElementById('set-uma1').value),
-            Number(document.getElementById('set-uma2').value),
-            Number(document.getElementById('set-uma3').value),
-            Number(document.getElementById('set-uma4').value)
-        ],
-        tieBreaker: tieBreakerVal
+        if (!validateScoreInput()) {
+            alert('合計点が100,000点ではありません。\n正しい点数を入力してください。');
+            return;
+        }
+
+        const session = await window.AppStorage.getSession(currentSessionId);
+        if (!session) return;
+
+        // 1. Gather Inputs
+        const playerData = [];
+        for (let i = 1; i <= 4; i++) {
+            const name = document.getElementById(`inp-p${i}-name`).value;
+            const rawInput = document.querySelector(`input[name="p${i}-score"]`).value;
+            const score = Number(rawInput) * 100;
+            playerData.push({ name, score });
+        }
+
+        // 2. Calculate Result
+        const scores = playerData.map(p => p.score);
+        const result = window.Mahjong.calculateResult(scores, session.rules);
+
+        // 3. Handle Tie-Breaker if needed
+        if (result.needsTieBreaker) {
+            // Show modal for tie-breaking
+            pendingGameData = { playerData, session, result };
+            showTieBreakerModal(result.tiedGroups, playerData);
+            return;
+        }
+
+        // 4. Map results back to player names and save
+        const players = result.map((playerResult, index) => ({
+            name: playerData[index].name,
+            rawScore: playerResult.rawScore,
+            rank: playerResult.rank,
+            finalScore: playerResult.finalScore
+        }));
+
+        await saveGameResult({ players });
+    });
+}
+
+function showTieBreakerModal(tiedGroups, playerData) {
+    tieBreakerOptions.innerHTML = '';
+
+    // For simplicity, handle only the first tied group
+    // tiedGroups is array of arrays: [[0,1], [2,3]]
+    const firstTiedGroup = tiedGroups[0];
+
+    firstTiedGroup.forEach(playerIndex => {
+        const playerName = playerData[playerIndex].name;
+        const btn = document.createElement('button');
+        btn.textContent = `${playerName} (起家に近い)`;
+        btn.onclick = () => resolveTie(playerIndex);
+        tieBreakerOptions.appendChild(btn);
+    });
+
+    tieBreakerModal.style.display = 'flex';
+}
+
+async function resolveTie(priorityPlayerIndex) {
+    tieBreakerModal.style.display = 'none';
+    if (!pendingGameData) return;
+
+    const { playerData, session, result } = pendingGameData;
+
+    // Create priority map: higher priority for selected player
+    const priorityMap = {};
+    result.tiedGroups[0].forEach((idx, position) => {
+        priorityMap[idx] = (idx === priorityPlayerIndex) ? 10 : 0;
+    });
+
+    // Recalculate with priority
+    const scores = playerData.map(p => p.score);
+    const finalResult = window.Mahjong.calculateResult(scores, session.rules, priorityMap);
+
+    // Map results back to player names
+    const players = finalResult.map((playerResult, index) => ({
+        name: playerData[index].name,
+        rawScore: playerResult.rawScore,
+        rank: playerResult.rank,
+        finalScore: playerResult.finalScore
+    }));
+
+    await saveGameResult({ players });
+    pendingGameData = null;
+}
+
+async function saveGameResult(result) {
+    const session = await window.AppStorage.getSession(currentSessionId);
+
+    const gameId = editingGameId ? Number(editingGameId) : Date.now();
+    const gameData = {
+        id: gameId,
+        timestamp: new Date().toISOString(),
+        players: result.players
     };
-    saveSettings(settings);
-    alert('設定を保存しました。');
-});
 
-resetSettingsBtn.addEventListener('click', () => {
-    if (confirm('設定を初期値に戻しますか？')) {
-        const defaultSettings = {
-            startScore: 25000,
-            returnScore: 30000,
-            uma: [30, 10, -10, -30],
-            tieBreaker: 'priority'
-        };
-        saveSettings(defaultSettings);
-        loadSettingsToForm();
-        alert('設定を初期化しました。');
+    if (editingGameId) {
+        await window.AppStorage.updateGameInSession(currentSessionId, gameId, gameData);
+        alert('対局結果を修正しました。');
+    } else {
+        await window.AppStorage.addGameToSession(currentSessionId, gameData);
+        alert('対局結果を保存しました！');
     }
-});
+
+    editingGameId = null;
+    navigateTo('session-detail');
+    await openSession(currentSessionId);
+}
+
 
 // ====== ROULETTE FUNCTIONALITY ======
 
-// Roulette DOM Elements
-const rouletteCanvas = document.getElementById('roulette-canvas');
-const rouletteCtx = rouletteCanvas ? rouletteCanvas.getContext('2d') : null;
-const spinBtn = document.getElementById('spin-btn');
-const rouletteResult = document.getElementById('roulette-result');
-const rouletteInput = document.getElementById('roulette-input');
-const addRouletteItemBtn = document.getElementById('add-roulette-item');
-const rouletteList = document.getElementById('roulette-list');
-
-// Roulette State
-let rouletteItems = [];
-let isSpinning = false;
-let currentRotation = 0;
-
-// Color palette for roulette segments
-const rouletteColors = [
-    '#bb86fc', '#03dac6', '#cf6679', '#ffb74d',
-    '#8b86fc', '#03da86', '#cf8879', '#ffb78d',
-    '#9b86fc', '#03daa6', '#cf6699', '#ffb70d',
-    '#ab86fc', '#03dac0', '#cf66a9', '#ffb75d',
-    '#cb86fc', '#03da90', '#cf66b9', '#ffb79d'
-];
-
 // Initialize roulette if on roulette page
-function initRoulette() {
+async function initRoulette() {
     if (!rouletteCanvas) return;
 
-    // Load saved items from localStorage
-    const saved = localStorage.getItem('rouletteItems');
-    if (saved) {
-        try {
-            rouletteItems = JSON.parse(saved);
-        } catch (e) {
-            rouletteItems = [];
-        }
-    }
+    try {
+        // Load saved items from AppStorage (Async)
+        rouletteItems = await window.AppStorage.getRouletteItems();
 
-    // Set default items if empty
-    if (rouletteItems.length === 0) {
+        // Items must be array
+        if (!Array.isArray(rouletteItems)) {
+            rouletteItems = ['1', '2', '3', '4', '5', '6', '7'];
+        }
+
+    } catch (e) {
+        console.error("Failed to load roulette items", e);
         rouletteItems = ['1', '2', '3', '4', '5', '6', '7'];
-        saveRouletteItems();
     }
 
     renderRouletteList();
     drawRoulette();
 }
 
-// Save items to localStorage
-function saveRouletteItems() {
-    localStorage.setItem('rouletteItems', JSON.stringify(rouletteItems));
+// Save items to AppStorage
+async function saveRouletteItems() {
+    await window.AppStorage.saveRouletteItems(rouletteItems);
 }
 
 // Add roulette item
 if (addRouletteItemBtn) {
-    addRouletteItemBtn.addEventListener('click', () => {
+    addRouletteItemBtn.addEventListener('click', async () => {
         const value = rouletteInput.value.trim();
         if (!value) {
             alert('項目を入力してください。');
@@ -1071,7 +1432,7 @@ if (addRouletteItemBtn) {
         }
 
         rouletteItems.push(value);
-        saveRouletteItems();
+        await saveRouletteItems(); // Async save
         rouletteInput.value = '';
         renderRouletteList();
         drawRoulette();
@@ -1087,14 +1448,14 @@ if (addRouletteItemBtn) {
 }
 
 // Remove roulette item
-function removeRouletteItem(index) {
+async function removeRouletteItem(index) {
     rouletteItems.splice(index, 1);
-    saveRouletteItems();
+    await saveRouletteItems(); // Async save
     renderRouletteList();
     drawRoulette();
 }
 
-// Make removeRouletteItem globally accessible
+// Make removeRouletteItem globally accessible (wrapper to handle async promise if needed, though click handler ignores it)
 window.removeRouletteItem = removeRouletteItem;
 
 // Render roulette item list
@@ -1315,10 +1676,22 @@ if (spinBtn) {
     });
 }
 
-// Initialize roulette when page loads
-if (rouletteCanvas) {
-    initRoulette();
+
+// Start at bottom of script
+// Replace the window load event listener with immediate execution for navigation
+setupNavigation();
+setupSessionFormToggles();
+
+// Function to handle safe initialization
+function safeInit() {
+    init().catch(err => {
+        console.error("Critical Init Error:", err);
+    });
 }
 
-// Start
-init();
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', safeInit);
+} else {
+    safeInit();
+}
+
