@@ -1,129 +1,163 @@
-/**
- * Storage Utility
- * Wrapper for localStorage
- */
-
-const KEYS = {
-    USERS: 'mahjong_users',
-    SESSIONS: 'mahjong_sessions',
-    SETTINGS: 'mahjong_settings'
+// Firebase Configuration
+const firebaseConfig = {
+    apiKey: "AIzaSyCk-FlI_dTmLfRb5d4WhbdP6SJ9s_6QyIw",
+    authDomain: "jong-log.firebaseapp.com",
+    projectId: "jong-log",
+    storageBucket: "jong-log.firebasestorage.app",
+    messagingSenderId: "615006808230",
+    appId: "1:615006808230:web:403e216552a3347ee4ec67",
+    measurementId: "G-8X6V557373"
 };
+
+// Initialize Firebase (Compat)
+let db;
+try {
+    firebase.initializeApp(firebaseConfig);
+    db = firebase.firestore();
+} catch (e) {
+    console.error("Firebase Init Error:", e);
+    alert("データベース接続に失敗しました。インターネット接続を確認してください。");
+}
 
 window.AppStorage = {};
 
 // --- Users ---
 
-window.AppStorage.getUsers = function () {
-    const data = localStorage.getItem(KEYS.USERS);
-    return data ? JSON.parse(data) : [];
-};
-
-window.AppStorage.addUser = function (name) {
-    const users = window.AppStorage.getUsers();
-    if (users.includes(name)) {
-        return false; // Duplicate
+window.AppStorage.getUsers = async function () {
+    try {
+        const snapshot = await db.collection("users").orderBy("name").get();
+        const users = [];
+        snapshot.forEach((doc) => {
+            users.push(doc.data().name);
+        });
+        return users;
+    } catch (e) {
+        console.error("getUsers failed:", e);
+        return [];
     }
-    users.push(name);
-    localStorage.setItem(KEYS.USERS, JSON.stringify(users));
-    return true;
 };
 
-window.AppStorage.removeUser = function (name) {
-    let users = window.AppStorage.getUsers();
-    users = users.filter(u => u !== name);
-    localStorage.setItem(KEYS.USERS, JSON.stringify(users));
+window.AppStorage.addUser = async function (name) {
+    try {
+        const userRef = db.collection("users").doc(name);
+        const userDoc = await userRef.get();
+
+        if (userDoc.exists) {
+            return false; // Duplicate
+        }
+
+        await userRef.set({ name: name, createdAt: new Date() });
+        return true;
+    } catch (e) {
+        console.error("addUser failed:", e);
+        return false;
+    }
+};
+
+window.AppStorage.removeUser = async function (name) {
+    await db.collection("users").doc(name).delete();
 };
 
 // --- Sessions ---
 
-window.AppStorage.getSessions = function () {
-    const data = localStorage.getItem(KEYS.SESSIONS);
-    return data ? JSON.parse(data) : [];
+window.AppStorage.getSessions = async function () {
+    try {
+        const snapshot = await db.collection("sessions").orderBy("id", "desc").get();
+        const sessions = [];
+        snapshot.forEach((doc) => {
+            sessions.push(doc.data());
+        });
+        return sessions;
+    } catch (e) {
+        console.error("getSessions failed:", e);
+        return [];
+    }
 };
 
-window.AppStorage.createSession = function (date, playerNames, rules = null) {
-    const sessions = window.AppStorage.getSessions();
-    // Use provided rules or fallback to current global settings
-    const sessionRules = rules || window.AppStorage.getSettings();
+window.AppStorage.createSession = async function (date, playerNames, rules = null) {
+    if (!rules) {
+        rules = await window.AppStorage.getSettings();
+    }
 
+    const sessionId = Date.now();
     const newSession = {
-        id: Date.now(),
-        date: date, // YYYY-MM-DD
-        players: playerNames, // Array of 4 names
-        rules: sessionRules,
+        id: sessionId,
+        date: date,
+        players: playerNames,
+        rules: rules,
         games: []
     };
-    sessions.unshift(newSession);
-    localStorage.setItem(KEYS.SESSIONS, JSON.stringify(sessions));
+
+    await db.collection("sessions").doc(String(sessionId)).set(newSession);
     return newSession;
 };
 
-window.AppStorage.getSession = function (sessionId) {
-    const sessions = window.AppStorage.getSessions();
-    return sessions.find(s => s.id === Number(sessionId));
-};
-
-window.AppStorage.addGameToSession = function (sessionId, gameData) {
-    const sessions = window.AppStorage.getSessions();
-    const sessionIndex = sessions.findIndex(s => s.id === Number(sessionId));
-
-    if (sessionIndex !== -1) {
-        sessions[sessionIndex].games.push(gameData);
-        localStorage.setItem(KEYS.SESSIONS, JSON.stringify(sessions));
-        return true;
+window.AppStorage.getSession = async function (sessionId) {
+    const doc = await db.collection("sessions").doc(String(sessionId)).get();
+    if (doc.exists) {
+        return doc.data();
     }
-    return false;
+    return null;
 };
 
-window.AppStorage.updateGameInSession = function (sessionId, gameId, updatedGameData) {
-    const sessions = window.AppStorage.getSessions();
-    const sessionIndex = sessions.findIndex(s => s.id === Number(sessionId));
+window.AppStorage.addGameToSession = async function (sessionId, gameData) {
+    const sessionRef = db.collection("sessions").doc(String(sessionId));
 
-    if (sessionIndex !== -1) {
-        const gameIndex = sessions[sessionIndex].games.findIndex(g => g.id === Number(gameId));
-        if (gameIndex !== -1) {
-            sessions[sessionIndex].games[gameIndex] = updatedGameData;
-            localStorage.setItem(KEYS.SESSIONS, JSON.stringify(sessions));
+    // Firestore transaction or simple update? ArrayUnion is cleaner but gameData is complex object.
+    // For simplicity with compat:
+    try {
+        // Use arrayUnion if possible, but we need to ensure unique objects? 
+        // Just reading and updating array is fine for now (less atomic but simple).
+        // Actually, Compat supports arrayUnion: firebase.firestore.FieldValue.arrayUnion(gameData)
+        await sessionRef.update({
+            games: firebase.firestore.FieldValue.arrayUnion(gameData)
+        });
+        return true;
+    } catch (e) {
+        console.error("addGameToSession failed:", e);
+        return false;
+    }
+};
+
+window.AppStorage.updateGameInSession = async function (sessionId, gameId, updatedGameData) {
+    const sessionRef = db.collection("sessions").doc(String(sessionId));
+
+    // We must read, find, update array, write back. 
+    // Firestore doesn't easily support updating one item in array by ID without reading.
+    const doc = await sessionRef.get();
+    if (doc.exists) {
+        const session = doc.data();
+        const games = session.games || [];
+        const index = games.findIndex(g => g.id === Number(gameId));
+        if (index !== -1) {
+            games[index] = updatedGameData;
+            await sessionRef.update({ games: games });
             return true;
         }
     }
     return false;
 };
 
-window.AppStorage.updateSession = function (sessionId, updates) {
-    const sessions = window.AppStorage.getSessions();
-    const sessionIndex = sessions.findIndex(s => s.id === Number(sessionId));
+window.AppStorage.updateSession = async function (sessionId, updates) {
+    await db.collection("sessions").doc(String(sessionId)).update(updates);
+    return true;
+};
 
-    if (sessionIndex !== -1) {
-        sessions[sessionIndex] = { ...sessions[sessionIndex], ...updates };
-        localStorage.setItem(KEYS.SESSIONS, JSON.stringify(sessions));
+window.AppStorage.removeSession = async function (sessionId) {
+    await db.collection("sessions").doc(String(sessionId)).delete();
+};
+
+window.AppStorage.removeGameFromSession = async function (sessionId, gameId) {
+    const sessionRef = db.collection("sessions").doc(String(sessionId));
+    const doc = await sessionRef.get();
+    if (doc.exists) {
+        const session = doc.data();
+        const games = session.games || [];
+        const newGames = games.filter(g => g.id !== Number(gameId));
+        await sessionRef.update({ games: newGames });
         return true;
     }
     return false;
-};
-
-window.AppStorage.removeSession = function (sessionId) {
-    let sessions = window.AppStorage.getSessions();
-    sessions = sessions.filter(s => s.id !== Number(sessionId));
-    localStorage.setItem(KEYS.SESSIONS, JSON.stringify(sessions));
-};
-
-window.AppStorage.removeGameFromSession = function (sessionId, gameId) {
-    const sessions = window.AppStorage.getSessions();
-    const sessionIndex = sessions.findIndex(s => s.id === Number(sessionId));
-
-    if (sessionIndex !== -1) {
-        sessions[sessionIndex].games = sessions[sessionIndex].games.filter(g => g.id !== Number(gameId));
-        localStorage.setItem(KEYS.SESSIONS, JSON.stringify(sessions));
-        return true;
-    }
-    return false;
-};
-
-window.AppStorage.clearAllData = function () {
-    localStorage.removeItem(KEYS.USERS);
-    localStorage.removeItem(KEYS.SESSIONS);
-    localStorage.removeItem(KEYS.SETTINGS);
 };
 
 // --- Settings ---
@@ -132,14 +166,39 @@ const DEFAULT_SETTINGS = {
     startScore: 25000,
     returnScore: 30000,
     uma: [30, 10, -10, -30],
-    tieBreaker: 'priority' // 'priority' or 'split'
+    tieBreaker: 'priority'
 };
 
-window.AppStorage.getSettings = function () {
-    const data = localStorage.getItem(KEYS.SETTINGS);
-    return data ? JSON.parse(data) : DEFAULT_SETTINGS;
+window.AppStorage.getSettings = async function () {
+    try {
+        const doc = await db.collection("settings").doc("global").get();
+        if (doc.exists) {
+            return doc.data();
+        }
+    } catch (e) {
+        console.warn("getSettings failed, using default:", e);
+    }
+    return DEFAULT_SETTINGS;
 };
 
-window.AppStorage.saveSettings = function (settings) {
-    localStorage.setItem(KEYS.SETTINGS, JSON.stringify(settings));
+window.AppStorage.saveSettings = async function (settings) {
+    await db.collection("settings").doc("global").set(settings);
+};
+
+// --- Roulette (Local Only) ---
+
+window.AppStorage.getRouletteItems = async function () {
+    const saved = localStorage.getItem('rouletteItems');
+    if (saved) {
+        try {
+            return JSON.parse(saved);
+        } catch (e) {
+            console.error(e);
+        }
+    }
+    return ['1', '2', '3', '4', '5', '6', '7']; // Default
+};
+
+window.AppStorage.saveRouletteItems = async function (items) {
+    localStorage.setItem('rouletteItems', JSON.stringify(items));
 };

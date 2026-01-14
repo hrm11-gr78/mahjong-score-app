@@ -13,9 +13,13 @@
 
 <body>
     <div id="app">
-        <header style="position: relative;">
+        <header style="position: relative; display: flex; align-items: center; justify-content: center;">
+            <button id="header-profile-btn"
+                style="position: absolute; left: 0; background: none; border: none; font-size: 1.5rem; cursor: pointer; color: var(--text-primary);"
+                title="ユーザー設定">👤</button>
             <h1>🀄 雀ログ</h1>
-            <button id="header-settings-btn" style="display: none;">⚙️</button>
+            <button id="header-settings-btn"
+                style="display: none; position: absolute; right: 0; background: none; border: none; font-size: 1.5rem; cursor: pointer;">⚙️</button>
         </header>
 
         <nav>
@@ -29,6 +33,12 @@
             <!-- HOME / SESSION SETUP SECTION -->
             <section id="home" class="active">
                 <h2>新規セット</h2>
+                <div id="setup-restriction-msg" class="restricted-access-msg"
+                    style="display:none; padding:15px; background:rgba(255,165,0,0.1); border:1px solid orange; border-radius:8px; margin-bottom:20px; color:orange;">
+                    ⚠️ セットを開始するには、画面左上のユーザーアイコン(👤)から自分の名前を選択してください。<br>
+                    (未設定の状態では記録の参照のみ可能です)
+                </div>
+
                 <form id="session-setup-form">
                     <div class="form-group">
                         <label>日付</label>
@@ -41,29 +51,37 @@
                                 <select name="p1" class="user-select" required>
                                     <option value="" disabled selected>選択...</option>
                                 </select>
-                                <input type="text" name="p1_custom" class="user-input-custom" placeholder="名前..." style="display:none;">
-                                <button type="button" class="toggle-guest-btn" data-target="p1" title="手動入力切替">🖊️</button>
+                                <input type="text" name="p1_custom" class="user-input-custom" placeholder="名前..."
+                                    style="display:none;">
+                                <button type="button" class="toggle-guest-btn" data-target="p1"
+                                    title="手動入力切替">🖊️</button>
                             </div>
                             <div class="player-select-wrapper" id="p2-wrapper">
                                 <select name="p2" class="user-select" required>
                                     <option value="" disabled selected>選択...</option>
                                 </select>
-                                <input type="text" name="p2_custom" class="user-input-custom" placeholder="名前..." style="display:none;">
-                                <button type="button" class="toggle-guest-btn" data-target="p2" title="手動入力切替">🖊️</button>
+                                <input type="text" name="p2_custom" class="user-input-custom" placeholder="名前..."
+                                    style="display:none;">
+                                <button type="button" class="toggle-guest-btn" data-target="p2"
+                                    title="手動入力切替">🖊️</button>
                             </div>
                             <div class="player-select-wrapper" id="p3-wrapper">
                                 <select name="p3" class="user-select" required>
                                     <option value="" disabled selected>選択...</option>
                                 </select>
-                                <input type="text" name="p3_custom" class="user-input-custom" placeholder="名前..." style="display:none;">
-                                <button type="button" class="toggle-guest-btn" data-target="p3" title="手動入力切替">🖊️</button>
+                                <input type="text" name="p3_custom" class="user-input-custom" placeholder="名前..."
+                                    style="display:none;">
+                                <button type="button" class="toggle-guest-btn" data-target="p3"
+                                    title="手動入力切替">🖊️</button>
                             </div>
                             <div class="player-select-wrapper" id="p4-wrapper">
                                 <select name="p4" class="user-select" required>
                                     <option value="" disabled selected>選択...</option>
                                 </select>
-                                <input type="text" name="p4_custom" class="user-input-custom" placeholder="名前..." style="display:none;">
-                                <button type="button" class="toggle-guest-btn" data-target="p4" title="手動入力切替">🖊️</button>
+                                <input type="text" name="p4_custom" class="user-input-custom" placeholder="名前..."
+                                    style="display:none;">
+                                <button type="button" class="toggle-guest-btn" data-target="p4"
+                                    title="手動入力切替">🖊️</button>
                             </div>
                         </div>
                     </div>
@@ -151,6 +169,10 @@
                     </table>
                 </div>
 
+                <div id="game-restriction-msg" class="restricted-access-msg"
+                    style="display:none; padding:10px; background:rgba(255,165,0,0.1); border:1px solid orange; border-radius:8px; margin-bottom:20px; color:orange; font-size:0.9rem;">
+                    ⚠️ 対局を追加するには、ユーザー設定が必要です。
+                </div>
                 <button id="new-game-btn" class="btn-primary" style="margin-bottom: 20px;">+ 対局を追加</button>
 
                 <h3>対局履歴</h3>
@@ -164,6 +186,10 @@
                 <div class="history-header">
                     <button id="cancel-input" class="btn-secondary">キャンセル</button>
                     <span>スコア入力</span>
+                </div>
+                <div id="score-restriction-msg" class="restricted-access-msg"
+                    style="display:none; padding:10px; background:rgba(255,165,0,0.1); border:1px solid orange; border-radius:8px; margin-bottom:20px; color:orange; font-size:0.9rem;">
+                    ⚠️ 対局結果を保存するには、ユーザー設定が必要です。
                 </div>
                 <form id="score-form">
                     <div class="score-grid">
@@ -214,6 +240,10 @@
             <!-- SETTINGS SECTION -->
             <section id="settings">
                 <h2>ルール設定</h2>
+                <div id="settings-restriction-msg" class="restricted-access-msg"
+                    style="display:none; padding:15px; background:rgba(255,165,0,0.1); border:1px solid orange; border-radius:8px; margin-bottom:20px; color:orange;">
+                    ⚠️ ルール設定を変更するには、ユーザー設定が必要です。
+                </div>
                 <form id="settings-form">
                     <div class="form-group">
                         <label>配給原点</label>
@@ -283,6 +313,10 @@
 
                 <div class="roulette-setup">
                     <h3>項目設定 <span style="font-size:0.8rem; font-weight:normal;">(最大20個)</span></h3>
+                    <div id="roulette-restriction-msg" class="restricted-access-msg"
+                        style="display:none; padding:10px; background:rgba(255,165,0,0.1); border:1px solid orange; border-radius:8px; margin-bottom:20px; color:orange; font-size:0.9rem;">
+                        ⚠️ ルーレットを操作するには、ユーザー設定が必要です。
+                    </div>
                     <div class="form-group" style="display:flex; gap:10px;">
                         <input type="text" id="roulette-input" placeholder="項目を入力 (例: 東場, 南場...)">
                         <button id="add-roulette-item" class="btn-secondary"
@@ -350,11 +384,36 @@
     <div id="tie-breaker-modal" class="modal" style="display: none;">
         <div class="modal-content">
             <h3>同点順位の決定</h3>
-            <p>起家（東家）に近いプレイヤーを選択してください。</p>
+            <p>起家(東家)に近いプレイヤーを選択してください。</p>
             <div id="tie-breaker-options"></div>
         </div>
     </div>
 
+    <!-- User Profile Modal -->
+    <div id="user-profile-modal" class="modal" style="display: none;">
+        <div class="modal-content">
+            <h3 style="margin-top: 0;">ユーザー設定</h3>
+
+            <div class="form-group">
+                <label style="font-size: 1rem; font-weight: 600;">ユーザー名</label>
+                <select id="profile-user-select" class="user-select"
+                    style="width: 100%; padding: 12px; font-size: 1rem;">
+                    <option value="">(未選択)</option>
+                </select>
+            </div>
+
+            <div style="display: flex; gap: 10px; justify-content: flex-end; margin-top: 25px;">
+                <button id="close-profile-modal" class="btn-secondary" style="width: auto;">キャンセル</button>
+                <button id="save-profile-user" class="btn-primary" style="width: auto;">保存</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Firebase Compat (Global) -->
+    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
+
+    <script src="sw.js"></script>
     <script src="js/mahjong.js"></script>
     <script src="js/storage.js"></script>
     <script src="js/app.js"></script>
