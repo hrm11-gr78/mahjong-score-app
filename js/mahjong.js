@@ -116,8 +116,7 @@ window.Mahjong.calculateResult = function (scores, settings, priorityMap = null)
     }
 
     // Restore original order for return
-    // (Actually, app.js expects sorted by rank usually? No, app.js maps by index)
-    // But let's return sorted by Rank for convenience, app.js handles mapping.
+    players.sort((a, b) => a.index - b.index);
     return players;
 };
 
