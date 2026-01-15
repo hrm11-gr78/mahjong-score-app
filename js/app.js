@@ -1682,6 +1682,7 @@ function playResultSound() {
 
 // Spin roulette
 // Spin roulette
+// Spin roulette
 if (spinBtn) {
     spinBtn.addEventListener('click', () => {
         if (isSpinning) return;
@@ -1699,93 +1700,221 @@ if (spinBtn) {
         spinBtn.disabled = true;
         spinBtn.textContent = "回転中...";
 
-        // ---- Animation Configuration ----
-        // Longer duration for specific user request (8s ~ 11s)
-        const baseDuration = 8000;
-        const randomDuration = Math.random() * 3000;
-        const totalDuration = baseDuration + randomDuration;
+        // ---- Animation Configuration & Logic ----
+
+        // Determine Effect Type
+        // 0: Normal (80%)
+        // 1: Respin (10%)
+        // 2: Slip (5%)
+        // 3: Reverse (5%) - New!
+        const rand = Math.random();
+        let effectType = 0;
+
+        if (rand < 0.05) effectType = 3;       // 5% Reverse
+        else if (rand < 0.10) effectType = 2;  // 5% Slip (cumulative 10%)
+        else if (rand < 0.20) effectType = 1;  // 10% Respin (cumulative 20%)
+        // else Normal (80%)
+
+        // Debug overrides (Uncomment to test specific effects)
+        // effectType = 1; // Force Respin
+        // effectType = 2; // Force Slip
+        // effectType = 3; // Force Reverse
 
         const startTime = performance.now();
-        // Initial velocity (radians per ms) - fast enough
-        const initialVelocity = 0.04;
-        // Friction coefficient to simulate decay
-        // We want velocity to be 0 at exactly totalDuration.
-        // Simple linear decay: v(t) = v0 * (1 - t/T) -> position is integral
-        // Quadratic/Cubic decay feels better.
-        // Let's use a custom easing on rotation directly for predictability.
 
-        // Target: Spin at least 15 times plus random offset
-        const minSpins = 15;
+        // Define phases for animation based on effect type
+        let startRotation = currentRotation;
+        let targetRotation = 0;
+        let duration = 0;
+        let phase = 0; // 0: Main Spin, 1+: Effects
+
+        // Setup initial spin
+        const baseDuration = (effectType === 1) ? 6000 : 8000;
+        const randomDuration = Math.random() * 2000;
+        duration = baseDuration + randomDuration;
+
+        // Calculate Target
+        const minSpins = 10;
         const randomAngle = Math.random() * Math.PI * 2;
         const totalRotationDelta = (Math.PI * 2 * minSpins) + randomAngle;
 
-        const startRotation = currentRotation;
-        const targetRotation = startRotation + totalRotationDelta;
+        targetRotation = startRotation + totalRotationDelta;
 
+        let initialTarget = targetRotation;
+
+        // Sound state
         let lastTickAngle = startRotation % (Math.PI * 2);
         const tickInterval = (Math.PI * 2) / rouletteItems.length;
 
         function animate(currentTime) {
             const elapsed = currentTime - startTime;
 
-            if (elapsed < totalDuration) {
-                // Easing: Quintic Out (very slow finish)
-                // t: 0 -> 1
-                const t = elapsed / totalDuration;
-                // easeOutQuint: 1 - pow(1 - x, 5)
-                const ease = 1 - Math.pow(1 - t, 5);
+            // Phase 0: The main spin
+            if (phase === 0) {
+                if (elapsed < duration) {
+                    const t = elapsed / duration;
+                    const ease = 1 - Math.pow(1 - t, 5); // EaseOutQuint
 
-                currentRotation = startRotation + (totalRotationDelta * ease);
-                drawRoulette(currentRotation);
+                    currentRotation = startRotation + (initialTarget - startRotation) * ease;
+                    drawRoulette(currentRotation);
+                    checkTick();
+                    requestAnimationFrame(animate);
+                } else {
+                    // Phase 0 Done.
+                    currentRotation = initialTarget;
+                    drawRoulette(currentRotation);
 
-                // Sound Effect Logic
-                const currentNormalized = currentRotation % (Math.PI * 2);
-                // Need to detect crossing tick boundary. 
-                // Simple difference check might miss if fast, but good enough for visual sync.
-                const diff = Math.abs(currentNormalized - lastTickAngle);
-
-                // Only play sound if moved enough and not finished
-                // (Tick interval check is complex with modulo, simplifying to segment change detection)
-                const currentSegment = Math.floor(currentNormalized / tickInterval);
-                const lastSegment = Math.floor(lastTickAngle / tickInterval);
-
-                if (currentSegment !== lastSegment && t < 0.98) {
-                    playTickSound();
+                    if (effectType === 0) {
+                        finishSpin();
+                    } else if (effectType === 1) {
+                        phase = 1;
+                        triggerRespin();
+                    } else if (effectType === 2) {
+                        phase = 2;
+                        triggerSlip();
+                    } else if (effectType === 3) {
+                        phase = 3;
+                        triggerReverse();
+                    }
                 }
-
-                lastTickAngle = currentNormalized;
-                requestAnimationFrame(animate);
-
-            } else {
-                // Animation Finished
-                finishSpin();
             }
         }
 
+        function checkTick() {
+            const currentNormalized = currentRotation % (Math.PI * 2);
+            const currentSegment = Math.floor(currentNormalized / tickInterval);
+            const lastSegment = Math.floor(lastTickAngle / tickInterval);
+
+            if (currentSegment !== lastSegment) {
+                playTickSound();
+            }
+            lastTickAngle = currentNormalized;
+        }
+
+        // --- Effect 1: Respin ---
+        function triggerRespin() {
+            setTimeout(() => {
+                playTickSound();
+
+                const respinStart = performance.now();
+                const respinDuration = 4000;
+                const respinStartRot = currentRotation;
+                const respinDelta = (Math.PI * 2 * 5) + (Math.random() * Math.PI * 2);
+                const respinTarget = respinStartRot + respinDelta;
+
+                spinBtn.textContent = "再始動！？";
+                spinBtn.style.color = "#ff4444";
+
+                function animateRespin(now) {
+                    const el = now - respinStart;
+                    if (el < respinDuration) {
+                        const t = el / respinDuration;
+                        const ease = 1 - Math.pow(1 - t, 4);
+
+                        currentRotation = respinStartRot + (respinTarget - respinStartRot) * ease;
+                        drawRoulette(currentRotation);
+                        checkTick();
+                        requestAnimationFrame(animateRespin);
+                    } else {
+                        currentRotation = respinTarget;
+                        drawRoulette(currentRotation);
+                        finishSpin();
+                    }
+                }
+                requestAnimationFrame(animateRespin);
+
+            }, 800);
+        }
+
+        // --- Effect 2: Slip ---
+        function triggerSlip() {
+            setTimeout(() => {
+                const slipStart = performance.now();
+                const slipDuration = 500;
+                const slipStartRot = currentRotation;
+                const slipDelta = tickInterval; // 1 segment
+
+                spinBtn.textContent = "滑り！？";
+                spinBtn.style.color = "#f59e0b";
+
+                playTickSound();
+
+                function animateSlip(now) {
+                    const el = now - slipStart;
+                    if (el < slipDuration) {
+                        const t = el / slipDuration;
+                        // Elastic Out for bump effect
+                        const c4 = (2 * Math.PI) / 3;
+                        const ease = t === 0 ? 0 : t === 1 ? 1 : Math.pow(2, -10 * t) * Math.sin((t * 10 - 0.75) * c4) + 1;
+
+                        currentRotation = slipStartRot + (slipDelta * ease);
+                        drawRoulette(currentRotation);
+                        requestAnimationFrame(animateSlip);
+                    } else {
+                        currentRotation = slipStartRot + slipDelta;
+                        drawRoulette(currentRotation);
+                        finishSpin();
+                    }
+                }
+                requestAnimationFrame(animateSlip);
+
+            }, 600);
+        }
+
+        // --- Effect 3: Reverse ---
+        function triggerReverse() {
+            setTimeout(() => {
+                const revStart = performance.now();
+                const revDuration = 1500; // Bounce back quickly
+                const revStartRot = currentRotation;
+
+                // Move BACKWARDS by random amount (2-5 segments)
+                const segmentsBack = 2 + Math.floor(Math.random() * 3);
+                const revDelta = -(tickInterval * segmentsBack);
+
+                spinBtn.textContent = "逆回転！？";
+                spinBtn.style.color = "#3b82f6";
+
+                // Boing sound (simulated by rapid tick or result sound pitch shift? just result for now)
+                playResultSound(); // Surprise!
+
+                function animateReverse(now) {
+                    const el = now - revStart;
+                    if (el < revDuration) {
+                        const t = el / revDuration;
+                        // EaseOutBack for the bounce effect
+                        const c1 = 1.70158;
+                        const c3 = c1 + 1;
+                        const ease = 1 + c3 * Math.pow(t - 1, 3) + c1 * Math.pow(t - 1, 2);
+
+                        currentRotation = revStartRot + (revDelta * ease);
+                        drawRoulette(currentRotation);
+                        // Check tick backwards?
+                        checkTick();
+                        requestAnimationFrame(animateReverse);
+                    } else {
+                        currentRotation = revStartRot + revDelta;
+                        drawRoulette(currentRotation);
+                        finishSpin();
+                    }
+                }
+                requestAnimationFrame(animateReverse);
+
+            }, 600);
+        }
+
+
         function finishSpin() {
-            // Snap to exact target
-            currentRotation = targetRotation;
-            drawRoulette(currentRotation);
+            // Reset Button Style
+            spinBtn.style.color = "";
+            spinBtn.textContent = "もう一度回す";
 
-            // Calculate Result IMMEDIATELY
+            // Calculate Result
             const normalizedRotation = (currentRotation % (Math.PI * 2) + Math.PI * 2) % (Math.PI * 2);
+
             const anglePerSegment = (2 * Math.PI) / rouletteItems.length;
-
-            // Pointer is at Top (-PI/2)
-            // Segment 'i' spans [rotation + i*w, rotation + (i+1)*w]
-            // We want 'i' such that top is inside this interval.
-            // Equivalent to checking what is at -PI/2 relative to rotation.
-            // Relative angle = (-PI/2) - rotation
             const pointerAngle = -Math.PI / 2;
-
-            // We need to find i such that:
-            // rotation + i*angle <= pointerAngle (mod 2PI) < rotation + (i+1)*angle
-
-            // Inverse mapping:
-            // (pointerAngle - rotation) / anglePerSegment = i.decimal
             let indexFloat = (pointerAngle - normalizedRotation) / anglePerSegment;
-
-            // Wrap to positive range [0, length)
             while (indexFloat < 0) indexFloat += rouletteItems.length;
 
             const winningIndex = Math.floor(indexFloat) % rouletteItems.length;
@@ -1794,8 +1923,15 @@ if (spinBtn) {
             // Play Success Sound
             playResultSound();
 
+            // Effect badge
+            let effectBadge = "";
+            if (effectType === 1) effectBadge = "<span style='font-size:0.7rem; background:#ff4444; color:white; padding:2px 6px; border-radius:4px; margin-bottom:5px; display:inline-block;'>再始動発動！</span><br>";
+            if (effectType === 2) effectBadge = "<span style='font-size:0.7rem; background:#f59e0b; color:white; padding:2px 6px; border-radius:4px; margin-bottom:5px; display:inline-block;'>滑り発動！</span><br>";
+            if (effectType === 3) effectBadge = "<span style='font-size:0.7rem; background:#3b82f6; color:white; padding:2px 6px; border-radius:4px; margin-bottom:5px; display:inline-block;'>逆回転発動！</span><br>";
+
             // Show Result
             rouletteResult.innerHTML = `
+                ${effectBadge}
                 <div style="font-size:0.8rem; color:#888;">RESULT</div>
                 <div style="font-size:1.5rem; font-weight:bold; color:#bb86fc; text-shadow:0 0 10px rgba(187,134,252,0.5);">
                     ${winningItem}
@@ -1804,7 +1940,6 @@ if (spinBtn) {
 
             isSpinning = false;
             spinBtn.disabled = false;
-            spinBtn.textContent = "もう一度回す";
         }
 
         requestAnimationFrame(animate);
