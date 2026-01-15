@@ -1484,48 +1484,148 @@ function drawRoulette(rotation = 0) {
 
     const centerX = rouletteCanvas.width / 2;
     const centerY = rouletteCanvas.height / 2;
-    const radius = 140;
+    // Outer radius for the wheel
+    const radius = 130;
 
     // Clear canvas
     rouletteCtx.clearRect(0, 0, rouletteCanvas.width, rouletteCanvas.height);
 
     const anglePerSegment = (2 * Math.PI) / rouletteItems.length;
 
-    // Draw segments
+    // --- 1. Draw Outer Bezel / Shadow ---
+    // Drop shadow for the whole wheel
+    rouletteCtx.save();
+    rouletteCtx.shadowColor = "rgba(0, 0, 0, 0.5)";
+    rouletteCtx.shadowBlur = 15;
+    rouletteCtx.shadowOffsetX = 5;
+    rouletteCtx.shadowOffsetY = 5;
+
+    rouletteCtx.beginPath();
+    rouletteCtx.arc(centerX, centerY, radius + 10, 0, 2 * Math.PI);
+    rouletteCtx.fillStyle = "#333";
+    rouletteCtx.fill();
+    rouletteCtx.restore();
+
+    // Metallic Bezel
+    const bezelGradient = rouletteCtx.createLinearGradient(centerX - radius, centerY - radius, centerX + radius, centerY + radius);
+    bezelGradient.addColorStop(0, "#444");
+    bezelGradient.addColorStop(0.5, "#888");
+    bezelGradient.addColorStop(1, "#444");
+
+    rouletteCtx.beginPath();
+    rouletteCtx.arc(centerX, centerY, radius + 8, 0, 2 * Math.PI);
+    rouletteCtx.fillStyle = bezelGradient;
+    rouletteCtx.fill();
+
+    // Darker inner rim
+    rouletteCtx.beginPath();
+    rouletteCtx.arc(centerX, centerY, radius + 2, 0, 2 * Math.PI);
+    rouletteCtx.fillStyle = "#1a1a1a";
+    rouletteCtx.fill();
+
+
+    // --- 2. Draw Segments ---
     rouletteItems.forEach((item, index) => {
         const startAngle = rotation + (index * anglePerSegment);
         const endAngle = startAngle + anglePerSegment;
 
-        // Draw segment
+        // Clip to radius
         rouletteCtx.beginPath();
         rouletteCtx.moveTo(centerX, centerY);
         rouletteCtx.arc(centerX, centerY, radius, startAngle, endAngle);
         rouletteCtx.closePath();
+
+        // Main Color
         rouletteCtx.fillStyle = rouletteColors[index % rouletteColors.length];
         rouletteCtx.fill();
-        rouletteCtx.strokeStyle = '#1e1e1e';
-        rouletteCtx.lineWidth = 2;
+
+        // Inner Highlight (Glossy effect)
+        rouletteCtx.save();
+        rouletteCtx.clip();
+        const gloss = rouletteCtx.createRadialGradient(centerX, centerY, radius * 0.2, centerX, centerY, radius);
+        gloss.addColorStop(0, "rgba(255, 255, 255, 0.1)");
+        gloss.addColorStop(1, "rgba(0, 0, 0, 0.1)");
+        rouletteCtx.fillStyle = gloss;
+        rouletteCtx.fill();
+        rouletteCtx.restore();
+
+        // Stroke
+        rouletteCtx.strokeStyle = 'rgba(0,0,0,0.2)';
+        rouletteCtx.lineWidth = 1;
         rouletteCtx.stroke();
 
-        // Draw text
+        // --- 3. Draw Text ---
         rouletteCtx.save();
         rouletteCtx.translate(centerX, centerY);
         rouletteCtx.rotate(startAngle + anglePerSegment / 2);
         rouletteCtx.textAlign = 'center';
-        rouletteCtx.fillStyle = '#000';
-        rouletteCtx.font = 'bold 14px Inter, sans-serif';
-        rouletteCtx.fillText(item, radius * 0.65, 5);
+        rouletteCtx.textBaseline = 'middle';
+
+        // Shadow for text readability
+        rouletteCtx.shadowColor = "rgba(0,0,0,0.5)";
+        rouletteCtx.shadowBlur = 4;
+        rouletteCtx.shadowOffsetX = 1;
+        rouletteCtx.shadowOffsetY = 1;
+
+        rouletteCtx.fillStyle = '#fff';
+        // Auto-scale font based on item length
+        const fontSize = Math.min(18, (radius * 0.7) / (item.length * 0.8));
+        rouletteCtx.font = `bold ${Math.max(10, fontSize)}px Inter, 'Noto Sans JP', sans-serif`;
+
+        // Push text out a bit
+        rouletteCtx.fillText(item, radius * 0.6, 0);
         rouletteCtx.restore();
     });
 
-    // Draw center circle
+    // --- 4. Center Decoration ---
+    // Outer gold ring
     rouletteCtx.beginPath();
-    rouletteCtx.arc(centerX, centerY, 20, 0, 2 * Math.PI);
-    rouletteCtx.fillStyle = '#bb86fc';
+    rouletteCtx.arc(centerX, centerY, 25, 0, 2 * Math.PI);
+    rouletteCtx.fillStyle = "#f59e0b"; // Gold
     rouletteCtx.fill();
-    rouletteCtx.strokeStyle = '#1e1e1e';
-    rouletteCtx.lineWidth = 3;
+    rouletteCtx.strokeStyle = "#b45309";
+    rouletteCtx.lineWidth = 2;
     rouletteCtx.stroke();
+
+    // Inner knob
+    rouletteCtx.beginPath();
+    rouletteCtx.arc(centerX, centerY, 18, 0, 2 * Math.PI);
+    const knobGrad = rouletteCtx.createRadialGradient(centerX - 5, centerY - 5, 2, centerX, centerY, 20);
+    knobGrad.addColorStop(0, "#fff");
+    knobGrad.addColorStop(1, "#ccc");
+    rouletteCtx.fillStyle = knobGrad;
+    rouletteCtx.fill();
+
+    // Center star or dot
+    rouletteCtx.beginPath();
+    rouletteCtx.arc(centerX, centerY, 5, 0, 2 * Math.PI);
+    rouletteCtx.fillStyle = "#333";
+    rouletteCtx.fill();
+
+    // --- 5. Pointer (Outside Loop, Static position) ---
+    // Triangle pointing down at top
+    const pointerSize = 20;
+    rouletteCtx.save();
+    // Move to top center, slightly overlapping
+    rouletteCtx.translate(centerX, centerY - radius - 5);
+
+    // Shadow for pointer
+    rouletteCtx.shadowColor = "rgba(0,0,0,0.5)";
+    rouletteCtx.shadowBlur = 5;
+    rouletteCtx.shadowOffsetY = 3;
+
+    rouletteCtx.beginPath();
+    rouletteCtx.moveTo(-12, -15);
+    rouletteCtx.lineTo(12, -15);
+    rouletteCtx.lineTo(0, 10); // Point down
+    rouletteCtx.closePath();
+
+    rouletteCtx.fillStyle = "#ef4444"; // Red pointer
+    rouletteCtx.fill();
+    rouletteCtx.strokeStyle = "#fff";
+    rouletteCtx.lineWidth = 2;
+    rouletteCtx.stroke();
+    rouletteCtx.restore();
 }
 
 // Audio context for sound effects
@@ -1581,6 +1681,7 @@ function playResultSound() {
 }
 
 // Spin roulette
+// Spin roulette
 if (spinBtn) {
     spinBtn.addEventListener('click', () => {
         if (isSpinning) return;
@@ -1596,88 +1697,117 @@ if (spinBtn) {
         isSpinning = true;
         rouletteResult.textContent = '';
         spinBtn.disabled = true;
+        spinBtn.textContent = "回転中...";
 
-        // Extended spin duration: 5-8 seconds
-        const spinDuration = 5000 + Math.random() * 3000;
-        // More rotations for longer visual effect
-        const finalRotation = currentRotation + (Math.PI * 2 * 8) + (Math.random() * Math.PI * 2);
-        const startTime = Date.now();
+        // ---- Animation Configuration ----
+        // Longer duration for specific user request (8s ~ 11s)
+        const baseDuration = 8000;
+        const randomDuration = Math.random() * 3000;
+        const totalDuration = baseDuration + randomDuration;
 
-        let lastTickAngle = 0;
+        const startTime = performance.now();
+        // Initial velocity (radians per ms) - fast enough
+        const initialVelocity = 0.04;
+        // Friction coefficient to simulate decay
+        // We want velocity to be 0 at exactly totalDuration.
+        // Simple linear decay: v(t) = v0 * (1 - t/T) -> position is integral
+        // Quadratic/Cubic decay feels better.
+        // Let's use a custom easing on rotation directly for predictability.
+
+        // Target: Spin at least 15 times plus random offset
+        const minSpins = 15;
+        const randomAngle = Math.random() * Math.PI * 2;
+        const totalRotationDelta = (Math.PI * 2 * minSpins) + randomAngle;
+
+        const startRotation = currentRotation;
+        const targetRotation = startRotation + totalRotationDelta;
+
+        let lastTickAngle = startRotation % (Math.PI * 2);
         const tickInterval = (Math.PI * 2) / rouletteItems.length;
 
-        function animate() {
-            const elapsed = Date.now() - startTime;
-            const progress = Math.min(elapsed / spinDuration, 1);
+        function animate(currentTime) {
+            const elapsed = currentTime - startTime;
 
-            // Enhanced easing function with more dramatic slowdown at the end
-            const easedProgress = easing(progress);
-            const previousRotation = currentRotation;
-            currentRotation = currentRotation + (finalRotation - currentRotation) * easedProgress;
+            if (elapsed < totalDuration) {
+                // Easing: Quintic Out (very slow finish)
+                // t: 0 -> 1
+                const t = elapsed / totalDuration;
+                // easeOutQuint: 1 - pow(1 - x, 5)
+                const ease = 1 - Math.pow(1 - t, 5);
 
+                currentRotation = startRotation + (totalRotationDelta * ease);
+                drawRoulette(currentRotation);
+
+                // Sound Effect Logic
+                const currentNormalized = currentRotation % (Math.PI * 2);
+                // Need to detect crossing tick boundary. 
+                // Simple difference check might miss if fast, but good enough for visual sync.
+                const diff = Math.abs(currentNormalized - lastTickAngle);
+
+                // Only play sound if moved enough and not finished
+                // (Tick interval check is complex with modulo, simplifying to segment change detection)
+                const currentSegment = Math.floor(currentNormalized / tickInterval);
+                const lastSegment = Math.floor(lastTickAngle / tickInterval);
+
+                if (currentSegment !== lastSegment && t < 0.98) {
+                    playTickSound();
+                }
+
+                lastTickAngle = currentNormalized;
+                requestAnimationFrame(animate);
+
+            } else {
+                // Animation Finished
+                finishSpin();
+            }
+        }
+
+        function finishSpin() {
+            // Snap to exact target
+            currentRotation = targetRotation;
             drawRoulette(currentRotation);
 
-            // Play tick sound when crossing segment boundaries
-            const currentAngle = currentRotation % (Math.PI * 2);
-            const ticksPassed = Math.floor(currentAngle / tickInterval);
-            const lastTicksPassed = Math.floor(lastTickAngle / tickInterval);
+            // Calculate Result IMMEDIATELY
+            const normalizedRotation = (currentRotation % (Math.PI * 2) + Math.PI * 2) % (Math.PI * 2);
+            const anglePerSegment = (2 * Math.PI) / rouletteItems.length;
 
-            if (ticksPassed !== lastTicksPassed && progress < 0.95) {
-                playTickSound();
-            }
-            lastTickAngle = currentAngle;
+            // Pointer is at Top (-PI/2)
+            // Segment 'i' spans [rotation + i*w, rotation + (i+1)*w]
+            // We want 'i' such that top is inside this interval.
+            // Equivalent to checking what is at -PI/2 relative to rotation.
+            // Relative angle = (-PI/2) - rotation
+            const pointerAngle = -Math.PI / 2;
 
-            if (progress < 1) {
-                requestAnimationFrame(animate);
-            } else {
-                // Determine result - Calculate which segment the arrow (at top) is pointing to
-                const normalizedRotation = (currentRotation % (Math.PI * 2) + Math.PI * 2) % (Math.PI * 2);
-                const anglePerSegment = (2 * Math.PI) / rouletteItems.length;
+            // We need to find i such that:
+            // rotation + i*angle <= pointerAngle (mod 2PI) < rotation + (i+1)*angle
 
-                // The arrow is at the top (-π/2 radians from the right/0)
-                // In drawing: segment i starts at (rotation + i * anglePerSegment)
-                // We need to find which segment contains the arrow position
-                const arrowPosition = -Math.PI / 2; // Top of circle
+            // Inverse mapping:
+            // (pointerAngle - rotation) / anglePerSegment = i.decimal
+            let indexFloat = (pointerAngle - normalizedRotation) / anglePerSegment;
 
-                // Which segment is under the arrow?
-                // The arrow points at arrowPosition in absolute coordinates
-                // Segments are drawn starting at normalizedRotation + i * anglePerSegment
-                // We need: normalizedRotation + i * anglePerSegment <= arrowPosition < normalizedRotation + (i+1) * anglePerSegment
+            // Wrap to positive range [0, length)
+            while (indexFloat < 0) indexFloat += rouletteItems.length;
 
-                // Solve for i: (arrowPosition - normalizedRotation) / anglePerSegment
-                let segmentIndexFloat = (arrowPosition - normalizedRotation) / anglePerSegment;
+            const winningIndex = Math.floor(indexFloat) % rouletteItems.length;
+            const winningItem = rouletteItems[winningIndex];
 
-                // Normalize to positive
-                while (segmentIndexFloat < 0) segmentIndexFloat += rouletteItems.length;
+            // Play Success Sound
+            playResultSound();
 
-                const winningIndex = Math.floor(segmentIndexFloat) % rouletteItems.length;
+            // Show Result
+            rouletteResult.innerHTML = `
+                <div style="font-size:0.8rem; color:#888;">RESULT</div>
+                <div style="font-size:1.5rem; font-weight:bold; color:#bb86fc; text-shadow:0 0 10px rgba(187,134,252,0.5);">
+                    ${winningItem}
+                </div>
+            `;
 
-                // Play result sound
-                playResultSound();
-
-                rouletteResult.textContent = `🎉 ${rouletteItems[winningIndex]} 🎉`;
-                isSpinning = false;
-                spinBtn.disabled = false;
-            }
+            isSpinning = false;
+            spinBtn.disabled = false;
+            spinBtn.textContent = "もう一度回す";
         }
 
-        // Enhanced easing function with dramatic slowdown at the end
-        function easing(t) {
-            // Cubic ease-in-out with extra slowdown at the end
-            if (t < 0.3) {
-                // Fast start
-                return 4 * t * t * t;
-            } else if (t < 0.7) {
-                // Medium speed
-                return 1 - Math.pow(-2 * (t - 0.5) + 1, 3) / 2;
-            } else {
-                // Dramatic slowdown
-                const localT = (t - 0.7) / 0.3;
-                return 0.85 + 0.15 * (1 - Math.pow(1 - localT, 4));
-            }
-        }
-
-        animate();
+        requestAnimationFrame(animate);
     });
 }
 
