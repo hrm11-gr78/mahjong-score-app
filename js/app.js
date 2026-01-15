@@ -634,7 +634,7 @@ async function renderUserDetail(userName) {
             amountElement.textContent = '-';
             amountElement.className = '';
         } else {
-            const amountStr = totalAmount > 0 ? `+${totalAmount}` : `${totalAmount}`;
+            const amountStr = totalAmount > 0 ? `+${totalAmount.toLocaleString()}` : `${totalAmount.toLocaleString()}`;
             amountElement.textContent = amountStr;
             amountElement.className = totalAmount >= 0 ? 'score-positive' : 'score-negative';
         }
@@ -1142,6 +1142,17 @@ function renderGameList(session) {
 // --- Score Input ---
 
 async function prepareInputForm(gameToEdit = null) {
+    // Reset form immediately to prevent old data from showing
+    scoreForm.reset();
+
+    if (gameToEdit) {
+        totalCheck.textContent = "合計: 100000";
+        totalCheck.className = "total-check valid";
+    } else {
+        totalCheck.textContent = "合計: 0";
+        totalCheck.className = "total-check";
+    }
+
     const session = await window.AppStorage.getSession(currentSessionId);
     if (!session) return;
 
@@ -1154,7 +1165,6 @@ async function prepareInputForm(gameToEdit = null) {
             hiddenInput.value = session.players[i];
         }
     }
-    scoreForm.reset();
 
     if (gameToEdit) {
         // Populate with existing scores
@@ -1170,11 +1180,6 @@ async function prepareInputForm(gameToEdit = null) {
                 }
             }
         }
-        totalCheck.textContent = "合計: 100000";
-        totalCheck.className = "total-check valid";
-    } else {
-        totalCheck.textContent = "合計: 0";
-        totalCheck.className = "total-check";
     }
 }
 
