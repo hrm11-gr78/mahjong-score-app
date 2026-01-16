@@ -1166,10 +1166,62 @@ function renderGameList(session) {
 }
 
 // --- Score Input ---
+// Input Mode State
+let isDirectScoreMode = false;
+
+const modePointsBtn = document.getElementById('mode-points');
+const modeDirectBtn = document.getElementById('mode-direct');
+
+if (modePointsBtn && modeDirectBtn) {
+    modePointsBtn.addEventListener('click', () => setInputMode(false));
+    modeDirectBtn.addEventListener('click', () => setInputMode(true));
+}
+
+function setInputMode(isDirect) {
+    isDirectScoreMode = isDirect;
+
+    // UI Update
+    if (isDirect) {
+        modePointsBtn.className = 'btn-secondary';
+        modeDirectBtn.className = 'btn-primary';
+
+        // Input fields config for Direct Score
+        scoreInputs.forEach(input => {
+            input.placeholder = "+50.5";
+            input.step = "0.1"; // Allow decimals
+            // Hide suffix "00"
+            const suffix = input.nextElementSibling;
+            if (suffix && suffix.classList.contains('suffix')) {
+                suffix.style.display = 'none';
+            }
+        });
+    } else {
+        modePointsBtn.className = 'btn-primary';
+        modeDirectBtn.className = 'btn-secondary';
+
+        // Input fields config for Points
+        scoreInputs.forEach(input => {
+            input.placeholder = "250";
+            input.removeAttribute('step'); // Integer only usually, or default
+            // Show suffix "00"
+            const suffix = input.nextElementSibling;
+            if (suffix && suffix.classList.contains('suffix')) {
+                suffix.style.display = 'inline';
+            }
+        });
+    }
+
+    // Re-validate immediately
+    validateScoreInput();
+}
 
 async function prepareInputForm(gameToEdit = null) {
-    // Reset form immediately to prevent old data from showing
+    // Reset form immediately
     scoreForm.reset();
+
+    // Default to Points Mode unless editing a game that looks like direct input?
+    // Hard to tell difference strictly, but usually we start with Points.
+    setInputMode(false);
 
     if (gameToEdit) {
         totalCheck.textContent = "合計: 100000";
@@ -1194,18 +1246,32 @@ async function prepareInputForm(gameToEdit = null) {
 
     if (gameToEdit) {
         // Populate with existing scores
+        // If we want to support direct edit of direct scores, we need to know if it was direct.
+        // For now, always assume points mode for edit unless we persist metadata.
+        // Or check if rawScore is 0/null which implies direct mode?
+
+        // Heuristic: If rawScore is missing or 0, maybe direct mode?
+        // But legacy data might vary. 
+        // Let's assume Points Mode for now as requested "Default".
+
         for (let i = 0; i < 4; i++) {
             const pName = session.players[i];
             const pData = gameToEdit.players.find(p => p.name === pName);
             if (pData) {
-                // pData.rawScore might be e.g. 25000
                 const scoreInput = document.querySelector(`input[name="p${i + 1}-score"]`);
                 if (scoreInput) {
-                    // Display as 250 because suffix is 00
-                    scoreInput.value = Math.floor(pData.rawScore / 100);
+                    // Check if rawScore seems valid for points mode
+                    if (pData.rawScore !== undefined && pData.rawScore !== 0) {
+                        scoreInput.value = Math.floor(pData.rawScore / 100);
+                    } else {
+                        // Switch to direct mode if rawScore is missing (implied direct save)
+                        setInputMode(true);
+                        scoreInput.value = pData.finalScore;
+                    }
                 }
             }
         }
+        validateScoreInput();
     }
 }
 
@@ -1216,31 +1282,196 @@ scoreInputs.forEach(input => {
 
 function validateScoreInput() {
     let currentTotal = 0;
-    scoreInputs.forEach(input => {
-        if (input.value) {
-            currentTotal += Number(input.value) * 100;
+    let isValid = false;
+    let displayText = "";
+
+    if (isDirectScoreMode) {
+        // Direct Mode Validation
+        // Sum should be close to 0 (or match rules)
+        // Just sum the values
+        scoreInputs.forEach(input => {
+            if (input.value) {
+                currentTotal += Number(input.value);
+            }
+        });
+
+        // Round to 1 decimal to avoid float errors
+        currentTotal = Math.round(currentTotal * 10) / 10;
+
+        displayText = `合計: ${currentTotal}`;
+
+        // For direct mode, we allow non-zero sums (e.g. slight adjustments),
+        // but maybe warn? For now, allow everything that is entered.
+        // User knows what they are doing.
+        isValid = true;
+        totalCheck.className = "total-check valid";
+
+        // Maybe warn if not 0?
+        if (currentTotal !== 0) {
+            totalCheck.className = "total-check"; // Warning color (yellowish/default)
+            displayText += " (注意: 0ではありません)";
         }
-    });
 
-    const difference = currentTotal - 100000;
-    let displayText = `合計: ${currentTotal.toLocaleString()}`;
+    } else {
+        // Points Mode Validation
+        scoreInputs.forEach(input => {
+            if (input.value) {
+                currentTotal += Number(input.value) * 100;
+            }
+        });
 
-    if (difference !== 0) {
-        const absDiff = Math.abs(difference);
-        const diffStr = difference > 0 ? `+${absDiff.toLocaleString()}` : `-${absDiff.toLocaleString()}`;
-        displayText += ` (${diffStr})`;
+        const difference = currentTotal - 100000;
+        displayText = `合計: ${currentTotal.toLocaleString()}`;
+
+        if (difference !== 0) {
+            const absDiff = Math.abs(difference);
+            const diffStr = difference > 0 ? `+${absDiff.toLocaleString()}` : `-${absDiff.toLocaleString()}`;
+            displayText += ` (${diffStr})`;
+            isValid = false;
+        } else {
+            isValid = true;
+        }
+
+        totalCheck.className = isValid ? "total-check valid" : "total-check invalid";
     }
 
     totalCheck.textContent = displayText;
-
-    if (currentTotal === 100000) {
-        totalCheck.className = "total-check valid";
-        return true;
-    } else {
-        totalCheck.className = "total-check invalid";
-        return false;
-    }
+    return isValid;
 }
+
+// --- Game Submission ---
+scoreForm.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    if (!currentSessionId) return;
+
+    // Final Validation
+    if (!validateScoreInput() && !isDirectScoreMode) {
+        // In Direct mode we are lenient, in Points mode we are strict about 100000
+        alert('点数の合計が100,000点になっていません。');
+        return;
+    }
+
+    const formData = new FormData(scoreForm);
+    const session = await window.AppStorage.getSession(currentSessionId);
+
+    // Gather scores
+    const playerScores = []; // Array of raw scores OR direct final scores
+    for (let i = 1; i <= 4; i++) {
+        const val = Number(formData.get(`p${i}-score`));
+        playerScores.push(val);
+    }
+
+    // Calculate or Assign Result
+    let playersResult;
+
+    if (isDirectScoreMode) {
+        // DIRECT MODE
+        // Calculate Raw Score from Final Score
+        // Formula: Raw = (Final - Uma - [Oka if Top]) * 1000 + ReturnScore
+
+        // 1. Get Rules
+        const rules = session.rules || await window.AppStorage.getSettings();
+        const startScore = rules.startScore;
+        const returnScore = rules.returnScore;
+        const uma = rules.uma; // [Top, 2nd, 3rd, 4th]
+        const oka = (returnScore - startScore) * 4 / 1000;
+
+        // 2. Create objects
+        let tempPlayers = session.players.map((name, index) => ({
+            name: name,
+            finalScore: playerScores[index],
+            index: index
+        }));
+
+        // 3. Assign ranks based on final score
+        tempPlayers.sort((a, b) => b.finalScore - a.finalScore);
+
+        tempPlayers.forEach((p, i) => {
+            p.rank = i + 1;
+
+            // 4. Reverse Calculation
+            // Point = (Raw - Return) / 1000
+            // Final = Point + Uma + [Oka]
+            // Final = (Raw - Return)/1000 + Uma + [Oka]
+            // Final - Uma - [Oka] = (Raw - Return)/1000
+            // (Final - Uma - [Oka]) * 1000 + Return = Raw
+
+            let currentUma = uma[i];
+            // Handle incomplete uma (e.g. 3 person mahjong rules if applicable in future, but assuming 4 here)
+            if (currentUma === undefined) currentUma = 0;
+
+            let isTop = (i === 0);
+
+            // Calculate Raw Score
+            let rawCalc = (p.finalScore - currentUma - (isTop ? oka : 0)) * 1000 + returnScore;
+
+            // Round to nearest 100 just in case of float drifts, though it should be exact for valid scores
+            p.rawScore = Math.round(rawCalc / 100) * 100;
+        });
+
+
+
+        // 5. Validation: Check for Rank Inversions & Total Zero
+        // Check if higher ranks have higher or equal rawScore
+        for (let i = 0; i < tempPlayers.length - 1; i++) {
+            if (tempPlayers[i].rawScore < tempPlayers[i + 1].rawScore) {
+                alert(`順位と点数が矛盾しています。\n${i + 1}位の点数が${i + 2}位より低くなっています。\n入力されたスコア差が、順位点（オカ・ウマ）の差より小さい可能性があります。`);
+                return;
+            }
+        }
+
+        // Check sum of final scores (should be 0)
+        const totalFinalScore = playerScores.reduce((a, b) => a + b, 0);
+        // Allow tiny float error
+        if (Math.abs(totalFinalScore) > 0.1) {
+            alert(`スコアの合計が0になっていません（合計: ${Math.round(totalFinalScore * 10) / 10}）。\n正しく入力してください。`);
+            return;
+        }
+
+        // 6. Restore order
+        tempPlayers.sort((a, b) => a.index - b.index);
+
+        playersResult = tempPlayers.map(p => ({
+            name: p.name,
+            rawScore: p.rawScore,
+            rank: p.rank,
+            finalScore: p.finalScore
+        }));
+
+    } else {
+        // POINTS MODE (Standard)
+        const scores = playerScores.map(s => s * 100); // x100 back to full points
+
+        // Check ties logic (if priority needed)
+        const checkResult = window.Mahjong.calculateResult(scores, session.rules);
+
+        if (checkResult.needsTieBreaker) {
+            // Need to resolve ties
+            // Store pending data and show modal
+            pendingGameData = {
+                playerData: session.players.map((name, i) => ({ name: name, score: scores[i] })),
+                session: session,
+                result: checkResult
+            };
+            showTieBreakerModal(checkResult.tiedGroups, pendingGameData.playerData);
+            return; // Stop here, wait for modal
+        }
+
+        // No ties, or resolved automatically
+        playersResult = checkResult.map((r, i) => ({
+            name: session.players[i],
+            rawScore: r.rawScore,
+            rank: r.rank,
+            finalScore: r.finalScore
+        }));
+    }
+
+    // Save
+    await saveGameResult({ players: playersResult });
+
+    // Close modal/form
+    navigateTo('session-detail');
+});
 
 // Settings form
 if (settingsForm) {
@@ -1299,50 +1530,7 @@ function setupScoreValidation() {
 }
 
 // --- Score Submission ---
-if (scoreForm) {
-    scoreForm.addEventListener('submit', async (e) => {
-        e.preventDefault();
 
-        if (!validateScoreInput()) {
-            alert('合計点が100,000点ではありません。\n正しい点数を入力してください。');
-            return;
-        }
-
-        const session = await window.AppStorage.getSession(currentSessionId);
-        if (!session) return;
-
-        // 1. Gather Inputs
-        const playerData = [];
-        for (let i = 1; i <= 4; i++) {
-            const name = document.getElementById(`inp-p${i}-name`).value;
-            const rawInput = document.querySelector(`input[name="p${i}-score"]`).value;
-            const score = Number(rawInput) * 100;
-            playerData.push({ name, score });
-        }
-
-        // 2. Calculate Result
-        const scores = playerData.map(p => p.score);
-        const result = window.Mahjong.calculateResult(scores, session.rules);
-
-        // 3. Handle Tie-Breaker if needed
-        if (result.needsTieBreaker) {
-            // Show modal for tie-breaking
-            pendingGameData = { playerData, session, result };
-            showTieBreakerModal(result.tiedGroups, playerData);
-            return;
-        }
-
-        // 4. Map results back to player names and save
-        const players = result.map((playerResult, index) => ({
-            name: playerData[index].name,
-            rawScore: playerResult.rawScore,
-            rank: playerResult.rank,
-            finalScore: playerResult.finalScore
-        }));
-
-        await saveGameResult({ players });
-    });
-}
 
 // TIE BREAKER HANDLING
 // Global state for sequential selection
