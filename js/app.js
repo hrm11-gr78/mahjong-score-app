@@ -831,12 +831,23 @@ async function renderSessionList() {
         const div = document.createElement('div');
         div.className = 'history-card';
         div.style.cursor = 'pointer';
+
+        // Lock Status
+        const isLocked = session.locked === true;
+        const lockIcon = isLocked ? '🔒' : '🔓';
+
+        // Show delete button ONLY if admin AND NOT LOCKED
+        const showDelete = localStorage.getItem('deviceUser') === 'ヒロム' && !isLocked;
+
         div.innerHTML = `
             <div style="display:flex; justify-content:space-between; align-items:center;">
                 <strong>${session.date}</strong>
-                <div>
-                    <span style="margin-right: 10px;">${session.games.length} 対局</span>
+                <div style="display:flex; align-items:center; gap:10px;">
+                    <span style="font-size:0.9rem;">${session.games.length} 対局</span>
                     ${localStorage.getItem('deviceUser') === 'ヒロム'
+                ? `<span class="session-lock-btn" data-id="${session.id}" style="cursor:pointer; font-size:1.2rem;">${lockIcon}</span>`
+                : ''}
+                    ${showDelete
                 ? `<button class="btn-danger btn-sm delete-session-btn" data-id="${session.id}" style="padding: 2px 8px; font-size: 0.8rem;">削除</button>`
                 : ''}
                 </div>
@@ -848,11 +859,22 @@ async function renderSessionList() {
 
         // Card click for navigation
         div.addEventListener('click', (e) => {
-            // Prevent navigation if delete button or parts of it were clicked
-            if (!e.target.closest('.delete-session-btn')) {
+            // Prevent navigation if delete button or lock button were clicked
+            if (!e.target.closest('.delete-session-btn') && !e.target.closest('.session-lock-btn')) {
                 openSession(session.id);
             }
         });
+
+        // Lock button click
+        const lockBtn = div.querySelector('.session-lock-btn');
+        if (lockBtn) {
+            lockBtn.addEventListener('click', async (e) => {
+                e.stopPropagation();
+                // Toggle lock
+                await window.AppStorage.updateSession(session.id, { locked: !isLocked });
+                await renderSessionList();
+            });
+        }
 
         // Delete button click
         const deleteSessionBtn = div.querySelector('.delete-session-btn');
@@ -860,8 +882,12 @@ async function renderSessionList() {
             deleteSessionBtn.addEventListener('click', async (e) => {
                 e.stopPropagation(); // Prevent card click
                 if (confirm('このセットを削除しますか？\nこの操作は取り消せません。')) {
-                    await window.AppStorage.removeSession(session.id);
-                    await renderSessionList();
+                    const success = await window.AppStorage.removeSession(session.id);
+                    if (success !== false) {
+                        await renderSessionList();
+                    } else {
+                        alert('削除できませんでした（ロックされている可能性があります）。');
+                    }
                 }
             });
         }
@@ -1318,50 +1344,132 @@ if (scoreForm) {
     });
 }
 
-function showTieBreakerModal(tiedGroups, playerData) {
-    tieBreakerOptions.innerHTML = '';
+// TIE BREAKER HANDLING
+// Global state for sequential selection
+let currentTieGroup = null;
+let currentTieOrder = [];
 
-    // For simplicity, handle only the first tied group
-    // tiedGroups is array of arrays: [[0,1], [2,3]]
-    const firstTiedGroup = tiedGroups[0];
+// Show modal
+function showTieBreakerModal(tiedGroups) {
+    if (!tieBreakerModal || !tieBreakerOptions) return;
 
-    firstTiedGroup.forEach(playerIndex => {
-        const playerName = playerData[playerIndex].name;
-        const btn = document.createElement('button');
-        btn.textContent = `${playerName} (起家に近い)`;
-        btn.onclick = () => resolveTie(playerIndex);
-        tieBreakerOptions.appendChild(btn);
-    });
+    // Always take the first group to resolve
+    currentTieGroup = tiedGroups[0];
+    currentTieOrder = []; // Reset order list for this group
+
+    // Sort indices for consistent display
+    // currentTieGroup is array of playerIndices
+
+    renderTieBreakerUI();
 
     tieBreakerModal.style.display = 'flex';
 }
 
-async function resolveTie(priorityPlayerIndex) {
+function renderTieBreakerUI() {
+    tieBreakerOptions.innerHTML = '';
+
+    const title = document.createElement('div');
+    title.style.color = 'white';
+    title.style.marginBottom = '10px';
+    title.textContent = `同点のプレイヤーがいます（${currentTieGroup.length}名）。優先順位が高い順（起家に近い順）に選択してください。`;
+    tieBreakerOptions.appendChild(title);
+
+    const { playerData } = pendingGameData;
+
+    currentTieGroup.forEach(playerIndex => {
+        const playerName = playerData[playerIndex].name;
+
+        // check if already selected
+        const selectedIndex = currentTieOrder.indexOf(playerIndex);
+        const isSelected = selectedIndex !== -1;
+
+        const btn = document.createElement('button');
+        // If selected, show rank badge. If not, show name.
+        if (isSelected) {
+            btn.innerHTML = `${playerName} <span style="background:#4caf50; color:white; border-radius:50%; width:20px; height:20px; display:inline-block; text-align:center; line-height:20px; font-size:12px;">${selectedIndex + 1}</span>`;
+            btn.disabled = true;
+            btn.style.opacity = '0.7';
+            btn.style.borderColor = '#4caf50';
+        } else {
+            btn.textContent = playerName;
+            btn.onclick = () => selectTiePlayer(playerIndex);
+        }
+
+        tieBreakerOptions.appendChild(btn);
+    });
+
+    // Reset Button
+    const resetBtn = document.createElement('button');
+    resetBtn.textContent = 'リセット';
+    resetBtn.className = 'btn-danger';
+    resetBtn.style.marginTop = '10px';
+    resetBtn.onclick = () => {
+        currentTieOrder = [];
+        renderTieBreakerUI();
+    };
+    tieBreakerOptions.appendChild(resetBtn);
+}
+
+function selectTiePlayer(playerIndex) {
+    currentTieOrder.push(playerIndex);
+    renderTieBreakerUI();
+
+    // Check if done
+    if (currentTieOrder.length === currentTieGroup.length) {
+        // Allow a small delay to see the last selection state?
+        setTimeout(() => {
+            resolveTieGroup();
+        }, 300);
+    }
+}
+
+async function resolveTieGroup() {
     tieBreakerModal.style.display = 'none';
     if (!pendingGameData) return;
 
-    const { playerData, session, result } = pendingGameData;
+    // We have the order: currentTieOrder = [HighestPriorityIndex, 2nd, ..., Lowest]
+    // Assign numerical priority. 
+    // Higher number = Higher Priority.
+    // Max priority can be 100.
+    // Index 0 (Highest) -> p + (N-0)
 
-    // Create priority map: higher priority for selected player
-    const priorityMap = {};
-    result.tiedGroups[0].forEach((idx, position) => {
-        priorityMap[idx] = (idx === priorityPlayerIndex) ? 10 : 0;
+    if (!pendingGameData.priorityMap) pendingGameData.priorityMap = {};
+
+    const N = currentTieOrder.length;
+    currentTieOrder.forEach((playerIndex, i) => {
+        // Priority: Higher is better.
+        // i=0 is 1st (Highest).
+        // Give 1st place N points, 2nd place N-1 points...
+        // We add this to existing map? 
+        // No, assuming priorityMap is fresh or we just overwrite for these specific players.
+        pendingGameData.priorityMap[playerIndex] = (N - i);
     });
 
-    // Recalculate with priority
+    // Re-run calculation to see if MORE ties exist
+    const { playerData, session } = pendingGameData;
     const scores = playerData.map(p => p.score);
-    const finalResult = window.Mahjong.calculateResult(scores, session.rules, priorityMap);
 
-    // Map results back to player names
-    const players = finalResult.map((playerResult, index) => ({
-        name: playerData[index].name,
-        rawScore: playerResult.rawScore,
-        rank: playerResult.rank,
-        finalScore: playerResult.finalScore
-    }));
+    const result = window.Mahjong.calculateResult(scores, session.rules, pendingGameData.priorityMap);
 
-    await saveGameResult({ players });
-    pendingGameData = null;
+    if (result.needsTieBreaker) {
+        // Still needs tie breaker (maybe another group, or logic error)
+        // Check if we made progress? 
+        // We resolved `currentTieGroup`. Next call should return OTHER groups.
+        showTieBreakerModal(result.tiedGroups);
+    } else {
+        // All done!
+
+        // Map results back
+        const players = result.map((playerResult, index) => ({
+            name: playerData[index].name,
+            rawScore: playerResult.rawScore,
+            rank: playerResult.rank,
+            finalScore: playerResult.finalScore
+        }));
+
+        await saveGameResult({ players });
+        pendingGameData = null;
+    }
 }
 
 async function saveGameResult(result) {

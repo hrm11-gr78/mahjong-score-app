@@ -37,20 +37,26 @@ window.Mahjong.calculateResult = function (scores, settings, priorityMap = null)
         priority: priorityMap ? (priorityMap[index] || 0) : 0
     }));
 
-    // 2. Check for ties if Priority mode and no map provided
-    if (tieBreaker === 'priority' && !priorityMap) {
-        // Group by score
+    // 2. Check for ties if Priority mode
+    // MODIFIED: Even if priorityMap is provided, we must check if ties are fully resolved.
+    // Ties are unresolved if players have same rawScore AND same priority.
+    if (tieBreaker === 'priority') {
         const scoreGroups = {};
+
+        // Group by "Score_Priority" key
         players.forEach(p => {
-            if (!scoreGroups[p.rawScore]) scoreGroups[p.rawScore] = [];
-            scoreGroups[p.rawScore].push(p.index);
+            const key = `${p.rawScore}_${p.priority}`;
+            if (!scoreGroups[key]) scoreGroups[key] = [];
+            scoreGroups[key].push(p.index);
         });
 
         const tiedGroups = Object.values(scoreGroups).filter(g => g.length > 1);
+
+        // If we have any group with >1 player with same score AND same priority, we need help.
         if (tiedGroups.length > 0) {
             return {
                 needsTieBreaker: true,
-                tiedGroups: tiedGroups // Array of arrays of indices, e.g. [[0, 1], [2, 3]]
+                tiedGroups: tiedGroups // Array of arrays of indices, e.g. [[0, 1], [0, 1, 2]]
             };
         }
     }
