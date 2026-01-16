@@ -85,7 +85,8 @@ window.AppStorage.createSession = async function (date, playerNames, rules = nul
         date: date,
         players: playerNames,
         rules: rules,
-        games: []
+        games: [],
+        locked: false // Default to unlocked
     };
 
     await db.collection("sessions").doc(String(sessionId)).set(newSession);
@@ -144,7 +145,14 @@ window.AppStorage.updateSession = async function (sessionId, updates) {
 };
 
 window.AppStorage.removeSession = async function (sessionId) {
+    // Check lock status before deleting
+    const doc = await db.collection("sessions").doc(String(sessionId)).get();
+    if (doc.exists && doc.data().locked) {
+        console.warn("Attempted to delete a locked session.");
+        return false;
+    }
     await db.collection("sessions").doc(String(sessionId)).delete();
+    return true;
 };
 
 window.AppStorage.removeGameFromSession = async function (sessionId, gameId) {
