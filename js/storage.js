@@ -37,6 +37,24 @@ window.AppStorage.getUsers = async function () {
     }
 };
 
+window.AppStorage.getUnlinkedUsers = async function () {
+    try {
+        const snapshot = await db.collection("users").get();
+        const users = [];
+        snapshot.forEach((doc) => {
+            const data = doc.data();
+            // Check if user is NOT linked (no uid or empty uid)
+            if (!data.uid) {
+                users.push(doc.id);
+            }
+        });
+        return users;
+    } catch (e) {
+        console.error("Error getting unlinked users: ", e);
+        return [];
+    }
+};
+
 window.AppStorage.addUser = async function (name) {
     try {
         const userRef = db.collection("users").doc(name);
@@ -209,4 +227,105 @@ window.AppStorage.getRouletteItems = async function () {
 
 window.AppStorage.saveRouletteItems = async function (items) {
     localStorage.setItem('rouletteItems', JSON.stringify(items));
+};
+
+// --- Authentication ---
+
+window.AppStorage.auth = {
+    // Current valid Firebase User
+    currentUser: null,
+
+    init: function (onAuthStateChanged) {
+        firebase.auth().onAuthStateChanged(async (user) => {
+            this.currentUser = user;
+            let linkedUser = null;
+            if (user) {
+                linkedUser = await this.getLinkedUser(user.uid);
+            }
+            onAuthStateChanged(user, linkedUser);
+        });
+    },
+
+    signIn: async function (email, password) {
+        try {
+            await firebase.auth().signInWithEmailAndPassword(email, password);
+            return { success: true };
+        } catch (e) {
+            console.error("SignIn failed:", e);
+            return { success: false, error: e.message };
+        }
+    },
+
+    signUp: async function (email, password) {
+        try {
+            await firebase.auth().createUserWithEmailAndPassword(email, password);
+            return { success: true };
+        } catch (e) {
+            console.error("SignUp failed:", e);
+            return { success: false, error: e.message };
+        }
+    },
+
+    signOut: async function () {
+        try {
+            await firebase.auth().signOut();
+            return { success: true };
+        } catch (e) {
+            console.error("SignOut failed:", e);
+            return { success: false, error: e.message };
+        }
+    },
+
+    getLinkedUser: async function (uid) {
+        try {
+            // Check if any user document has this uid
+            const snapshot = await db.collection("users").where("uid", "==", uid).limit(1).get();
+            if (!snapshot.empty) {
+                return snapshot.docs[0].data();
+            }
+            return null;
+        } catch (e) {
+            console.error("getLinkedUser failed:", e);
+            return null;
+        }
+    },
+
+    linkUser: async function (uid, gameUserName) {
+        try {
+            // Check if this game user exists
+            const userRef = db.collection("users").doc(gameUserName);
+            const doc = await userRef.get();
+
+            if (doc.exists) {
+                // Update existing user with uid
+                await userRef.update({ uid: uid });
+            } else {
+                // Create new user with uid
+                await userRef.set({
+                    name: gameUserName,
+                    createdAt: new Date(),
+                    uid: uid
+                });
+            }
+            return true;
+        } catch (e) {
+            console.error("linkUser failed:", e);
+            return false;
+        }
+    },
+
+    updatePassword: async function (newPassword) {
+        try {
+            const user = firebase.auth().currentUser;
+            if (user) {
+                await user.updatePassword(newPassword);
+                return { success: true };
+            } else {
+                return { success: false, error: "No user logged in" };
+            }
+        } catch (e) {
+            console.error("Update password failed:", e);
+            return { success: false, error: e.code, message: e.message };
+        }
+    }
 };

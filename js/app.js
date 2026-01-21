@@ -5,6 +5,28 @@ const navButtons = document.querySelectorAll('nav button');
 const sections = document.querySelectorAll('section');
 const userSelects = document.querySelectorAll('.user-select');
 
+// Auth Elements
+const loginSection = document.getElementById('login');
+const signupSection = document.getElementById('signup');
+const linkUserSection = document.getElementById('link-user');
+const loginEmailInput = document.getElementById('login-email');
+const loginPasswordInput = document.getElementById('login-password');
+const loginBtn = document.getElementById('login-btn');
+const showSignupBtn = document.getElementById('show-signup');
+const loginError = document.getElementById('login-error');
+
+const signupEmailInput = document.getElementById('signup-email');
+const signupPasswordInput = document.getElementById('signup-password');
+const signupBtn = document.getElementById('signup-btn');
+const showLoginBtn = document.getElementById('show-login');
+const signupError = document.getElementById('signup-error');
+
+const linkUserSelect = document.getElementById('link-user-select');
+const linkUserNewNameInput = document.getElementById('link-user-new-name');
+const linkUserBtn = document.getElementById('link-user-btn');
+
+// Session Setup
+
 // Session Setup
 const sessionSetupForm = document.getElementById('session-setup-form');
 const sessionDateInput = document.getElementById('session-date');
@@ -66,22 +88,61 @@ const rouletteColors = [
 ];
 
 // --- Initialization ---
+// --- Initialization ---
 async function init() {
     // 1. Synchronous Setup (Immediate)
-    // Set default date to today
     if (sessionDateInput) {
         sessionDateInput.valueAsDate = new Date();
     }
 
-    // Setup UI interactivity immediately
     setupScoreValidation();
 
-    // Trigger initial navigation to set UI state
-    navigateTo('home');
+    // 2. Initialize Auth & State
+    window.AppStorage.auth.init(handleAuthStateChanged);
 
-    // 2. Asynchronous Data Loading
+    // 3. User & Session Data is loaded AFTER auth is confirmed (in handleAuthStateChanged)
+}
+
+async function handleAuthStateChanged(user, linkedUser) {
+    const nav = document.querySelector('nav');
+    const profileBtn = document.getElementById('header-profile-btn');
+
+    if (!user) {
+        // Not logged in -> Show Login
+        if (nav) nav.style.display = 'none';
+        if (profileBtn) profileBtn.style.display = 'none';
+        navigateTo('login');
+        return;
+    }
+
+    // Logged in
+    console.log("Logged in as:", user.email);
+
+    // Check if linked to Game User
+    if (!linkedUser) {
+        console.log("User not linked. Redirecting to Link User Screen.");
+        // Not linked -> Show Link User Screen
+        // Ensure other sections are hidden
+        if (nav) nav.style.display = 'none';
+        if (profileBtn) profileBtn.style.display = 'none';
+
+        // We need to load users first to populate the select
+        await renderUserOptions();
+        navigateTo('link-user');
+        return;
+    }
+
+    // Linked! -> Set Device User and Go Home
+    console.log("Linked Game User:", linkedUser.name);
+
+    // Show Nav and Profile Button
+    if (nav) nav.style.display = 'flex';
+    if (profileBtn) profileBtn.style.display = 'block';
+
+    localStorage.setItem('deviceUser', linkedUser.name); // Sync local storage for compat
+
+    // Load Data
     try {
-        // Load data in parallel where possible or sequentially if needed
         await Promise.all([
             renderUserOptions(),
             renderUserList(),
@@ -90,15 +151,107 @@ async function init() {
             loadNewSetFormDefaults()
         ]);
 
-        // Initialize Roulette after base data, if on roulette page or needed
         if (rouletteCanvas) {
             await initRoulette();
         }
     } catch (e) {
-        console.error("Initialization / Data Loading Failed:", e);
-        // Do not alert here to avoid annoying popups if offline or slight delay
-        // Maybe show a "Connection Error" toast if strictly needed.
+        console.error("Data Loading Failed:", e);
     }
+
+    // Go to Home
+    navigateTo('home');
+}
+
+// --- Auth Event Listeners ---
+
+if (loginBtn) {
+    loginBtn.addEventListener('click', async () => {
+        const email = loginEmailInput.value;
+        const password = loginPasswordInput.value;
+        if (!email || !password) {
+            showError(loginError, "メールアドレスとパスワードを入力してください。");
+            return;
+        }
+
+        const result = await window.AppStorage.auth.signIn(email, password);
+        if (!result.success) {
+            showError(loginError, "ログインに失敗しました: " + result.error);
+        }
+    });
+}
+
+if (signupBtn) {
+    signupBtn.addEventListener('click', async () => {
+        const email = signupEmailInput.value;
+        const password = signupPasswordInput.value;
+        if (!email || !password) {
+            showError(signupError, "メールアドレスとパスワードを入力してください。");
+            return;
+        }
+
+        const result = await window.AppStorage.auth.signUp(email, password);
+        if (!result.success) {
+            let msg = "登録に失敗しました: " + result.error;
+            if (result.error && result.error.includes('email-already-in-use')) {
+                msg = "このメールアドレスは既に使用されています。ログインしてください。";
+            }
+            showError(signupError, msg);
+        } else {
+            // Success! 
+            // Manually transition to Link User screen to ensure smooth flow
+            // Hide Login UI elements
+            const nav = document.querySelector('nav');
+            const profileBtn = document.getElementById('header-profile-btn');
+            if (nav) nav.style.display = 'none';
+            if (profileBtn) profileBtn.style.display = 'none';
+
+            // Load options and navigate
+            await renderUserOptions();
+            navigateTo('link-user');
+        }
+    });
+}
+
+if (showSignupBtn) {
+    showSignupBtn.addEventListener('click', () => navigateTo('signup'));
+}
+
+if (showLoginBtn) {
+    showLoginBtn.addEventListener('click', () => navigateTo('login'));
+}
+
+if (linkUserBtn) {
+    linkUserBtn.addEventListener('click', async () => {
+        let gameUserName = linkUserSelect.value;
+        const newName = linkUserNewNameInput.value.trim();
+
+        if (newName) {
+            gameUserName = newName;
+            // Validate availability? existing checks in linkUser/addUser could handle it
+        }
+
+        if (!gameUserName) {
+            alert("ユーザーを選択または入力してください。");
+            return;
+        }
+
+        const currentUser = window.AppStorage.auth.currentUser;
+        if (!currentUser) return; // Should not happen
+
+        const success = await window.AppStorage.auth.linkUser(currentUser.uid, gameUserName);
+        if (success) {
+            // Re-trigger auth state check to proceed
+            const linked = await window.AppStorage.auth.getLinkedUser(currentUser.uid);
+            handleAuthStateChanged(currentUser, linked);
+        } else {
+            alert("連携に失敗しました。");
+        }
+    });
+}
+
+function showError(element, message) {
+    element.textContent = message;
+    element.style.display = 'block';
 }
 
 async function loadNewSetFormDefaults() {
@@ -180,6 +333,7 @@ function setupNavigation() {
 
 function navigateTo(targetId) {
     if (!targetId) return;
+    console.log(`Navigating to: ${targetId}. Found ${sections.length} sections.`);
 
     // Update Buttons
     navButtons.forEach(b => {
@@ -193,8 +347,13 @@ function navigateTo(targetId) {
     // Update Sections
     sections.forEach(s => {
         s.classList.remove('active');
+        // Force inline style toggle to ensure visibility
+        s.style.display = 'none';
+
         if (s.id === targetId) {
             s.classList.add('active');
+            s.style.display = 'block';
+            console.log("Navigated to:", targetId); // Debug log
         }
     });
 
@@ -272,18 +431,21 @@ const headerProfileBtn = document.getElementById('header-profile-btn');
 const userProfileModal = document.getElementById('user-profile-modal');
 const profileUserSelect = document.getElementById('profile-user-select');
 const closeProfileModalBtn = document.getElementById('close-profile-modal');
-const saveProfileUserBtn = document.getElementById('save-profile-user');
+const signOutBtn = document.getElementById('sign-out-btn');
 
 if (headerProfileBtn) {
     headerProfileBtn.addEventListener('click', async () => {
-        // Populate select with latest users
-        await renderUserOptions();
+        // Load current info
+        const deviceUser = localStorage.getItem('deviceUser') || '未設定';
+        const currentUser = window.AppStorage.auth.currentUser;
+        const email = currentUser ? currentUser.email : '未ログイン';
 
-        // Load current device user
-        const savedDeviceUser = localStorage.getItem('deviceUser');
-        if (profileUserSelect && savedDeviceUser) {
-            profileUserSelect.value = savedDeviceUser;
-        }
+        // Update Modal Content
+        const nameEl = document.getElementById('profile-game-name');
+        const emailEl = document.getElementById('profile-email');
+
+        if (nameEl) nameEl.textContent = deviceUser;
+        if (emailEl) emailEl.textContent = email;
 
         // Show modal
         if (userProfileModal) {
@@ -300,39 +462,73 @@ if (closeProfileModalBtn) {
     });
 }
 
-if (saveProfileUserBtn) {
-    saveProfileUserBtn.addEventListener('click', async () => {
-        try {
-            if (profileUserSelect) {
-                const selectedUser = profileUserSelect.value;
-                if (selectedUser) {
-                    localStorage.setItem('deviceUser', selectedUser);
-                } else {
-                    localStorage.removeItem('deviceUser');
-                }
-
-                // Refresh UI (Don't block modal closing if these fail)
-                Promise.all([
-                    renderUserList(),
-                    renderSessionList()
-                ]).catch(err => console.error("UI Refresh Failed:", err));
-
-                updateActionRestrictions();
-            }
-        } catch (e) {
-            console.error("Save Profile Failed:", e);
-        } finally {
+if (signOutBtn) {
+    signOutBtn.addEventListener('click', async () => {
+        if (confirm('サインアウトしますか？')) {
             if (userProfileModal) {
                 userProfileModal.style.display = 'none';
             }
-            alert('ユーザー設定を保存しました。');
+            await window.AppStorage.auth.signOut();
+            // handleAuthStateChanged will handle the rest (redirect, etc.)
+        }
+    });
+}
+
+// Password Change Features
+const showPasswordChangeBtn = document.getElementById('show-password-change');
+const passwordChangeForm = document.getElementById('password-change-form');
+const cancelPasswordChangeBtn = document.getElementById('cancel-password-change');
+const updatePasswordBtn = document.getElementById('update-password-btn');
+const newPasswordInput = document.getElementById('new-password-input');
+
+if (showPasswordChangeBtn) {
+    showPasswordChangeBtn.addEventListener('click', () => {
+        passwordChangeForm.style.display = 'block';
+        showPasswordChangeBtn.style.display = 'none';
+    });
+}
+
+if (cancelPasswordChangeBtn) {
+    cancelPasswordChangeBtn.addEventListener('click', () => {
+        passwordChangeForm.style.display = 'none';
+        showPasswordChangeBtn.style.display = 'inline-block';
+        if (newPasswordInput) newPasswordInput.value = '';
+    });
+}
+
+if (updatePasswordBtn) {
+    updatePasswordBtn.addEventListener('click', async () => {
+        const newPassword = newPasswordInput.value;
+        if (!newPassword || newPassword.length < 6) {
+            alert('パスワードは6文字以上で入力してください。');
+            return;
+        }
+
+        const result = await window.AppStorage.auth.updatePassword(newPassword);
+        if (result.success) {
+            alert('パスワードを変更しました。');
+            passwordChangeForm.style.display = 'none';
+            showPasswordChangeBtn.style.display = 'inline-block';
+            newPasswordInput.value = '';
+        } else {
+            if (result.error === 'auth/requires-recent-login') {
+                alert('セキュリティのため、再ログインが必要です。ログアウトします。');
+                await window.AppStorage.auth.signOut();
+                if (userProfileModal) userProfileModal.style.display = 'none';
+            } else {
+                alert('パスワードの変更に失敗しました: ' + result.message);
+            }
         }
     });
 }
 
 // --- User Management ---
 async function renderUserOptions() {
-    const users = await window.AppStorage.getUsers();
+    const allUsers = await window.AppStorage.getUsers();
+
+    // For the User Link Screen, we only want unlinked users
+    // optimization: only fetch this if we are likely to need it (or just fetch always for simplicity)
+    const unlinkedUsers = await window.AppStorage.getUnlinkedUsers();
 
     // Update all user-select dropdowns (Game Setup & Settings)
     // We target .user-select class.
@@ -340,7 +536,11 @@ async function renderUserOptions() {
 
     selects.forEach(select => {
         const currentVal = select.value;
+        const isLinkUserSelect = select.id === 'link-user-select';
         const isProfileUserSelect = select.id === 'profile-user-select';
+
+        // Choose which list to use
+        const userSource = isLinkUserSelect ? unlinkedUsers : allUsers;
 
         // Reset options
         if (isProfileUserSelect) {
@@ -349,15 +549,15 @@ async function renderUserOptions() {
             select.innerHTML = '<option value="" disabled selected>選択...</option>';
         }
 
-        users.forEach(user => {
+        userSource.forEach(user => {
             const option = document.createElement('option');
             option.value = user;
             option.textContent = user;
             select.appendChild(option);
         });
 
-        // Restore value if still valid
-        if (currentVal && users.includes(currentVal)) {
+        // Restore value if still valid in the new list
+        if (currentVal && userSource.includes(currentVal)) {
             select.value = currentVal;
         }
     });
@@ -366,7 +566,7 @@ async function renderUserOptions() {
     const deviceUserSelect = document.getElementById('device-user-select');
     if (deviceUserSelect) {
         const savedDeviceUser = localStorage.getItem('deviceUser');
-        if (savedDeviceUser && users.includes(savedDeviceUser)) {
+        if (savedDeviceUser && allUsers.includes(savedDeviceUser)) {
             deviceUserSelect.value = savedDeviceUser;
         }
     }
@@ -417,6 +617,24 @@ async function renderUserList() {
 
     // Get Device User
     const deviceUser = localStorage.getItem('deviceUser');
+    const isAdmin = deviceUser === 'ヒロム';
+
+    // Toggle Add User Form Visibility
+    const addUserSection = document.getElementById('add-user-section'); // Assumes a wrapper exists or we toggle elements
+    const userManagementHeader = document.querySelector('#users h2');
+
+    // Fallback if wrapper doesn't exist, toggle elements directly
+    if (newUserNameInput && addUserBtn) {
+        if (isAdmin) {
+            newUserNameInput.style.display = 'inline-block';
+            addUserBtn.style.display = 'inline-block';
+            if (userManagementHeader) userManagementHeader.style.display = 'block';
+        } else {
+            newUserNameInput.style.display = 'none';
+            addUserBtn.style.display = 'none';
+            if (userManagementHeader) userManagementHeader.style.display = 'none';
+        }
+    }
 
     userList.innerHTML = '';
     users.forEach(user => {
@@ -425,10 +643,8 @@ async function renderUserList() {
         let deleteBtnHtml = '';
 
         // Show delete button ONLY IF:
-        // 1. A device user IS set
-        // AND
-        // (The listed user IS the device user OR the device user is "ヒロム")
-        if (deviceUser && (deviceUser === user || deviceUser === 'ヒロム')) {
+        // Current user is "ヒロム" (Admin)
+        if (isAdmin) {
             deleteBtnHtml = `<button class="btn-danger" data-user="${user}">削除</button>`;
         } else {
             deleteBtnHtml = ``;
@@ -442,7 +658,7 @@ async function renderUserList() {
         userList.appendChild(li);
     });
 
-    document.querySelectorAll('.btn-danger').forEach(btn => {
+    userList.querySelectorAll('.btn-danger').forEach(btn => {
         btn.addEventListener('click', async (e) => {
             const user = e.target.dataset.user;
             // Double check logic (though UI hidden is first line of defense)

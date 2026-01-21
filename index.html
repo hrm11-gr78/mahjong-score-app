@@ -15,14 +15,14 @@
     <div id="app">
         <header style="position: relative; display: flex; align-items: center; justify-content: center;">
             <button id="header-profile-btn"
-                style="position: absolute; left: 0; background: none; border: none; font-size: 1.5rem; cursor: pointer; color: var(--text-primary);"
+                style="display: none; position: absolute; left: 0; background: none; border: none; font-size: 1.5rem; cursor: pointer; color: var(--text-primary);"
                 title="ユーザー設定">👤</button>
             <h1>🀄 雀ログ</h1>
             <button id="header-settings-btn"
                 style="display: none; position: absolute; right: 0; background: none; border: none; font-size: 1.5rem; cursor: pointer;">⚙️</button>
         </header>
 
-        <nav>
+        <nav style="display: none;">
             <button data-target="home" class="active">ホーム</button>
             <button data-target="users">ユーザー</button>
             <button data-target="roulette">ルーレット</button>
@@ -30,8 +30,65 @@
         </nav>
 
         <main>
+            <!-- LOGIN SECTION -->
+            <section id="login" class="active">
+                <h2>ログイン</h2>
+                <div class="form-group">
+                    <label>メールアドレス</label>
+                    <input type="email" id="login-email" placeholder="email@example.com">
+                </div>
+                <div class="form-group">
+                    <label>パスワード</label>
+                    <input type="password" id="login-password" placeholder="Password">
+                </div>
+                <button id="login-btn" class="btn-primary" style="margin-bottom: 10px;">ログイン</button>
+                <div class="text-center" style="margin-top: 15px;">
+                    <button id="show-signup" class="btn-secondary" style="font-size: 0.9rem;">アカウントを作成する</button>
+                </div>
+                <div id="login-error" class="error-msg"
+                    style="display:none; color: var(--error-color); margin-top: 10px;"></div>
+            </section>
+
+            <!-- SIGNUP SECTION (Hidden by default) -->
+            <section id="signup">
+                <h2>アカウント作成</h2>
+                <div class="form-group">
+                    <label>メールアドレス</label>
+                    <input type="email" id="signup-email" placeholder="email@example.com">
+                </div>
+                <div class="form-group">
+                    <label>パスワード</label>
+                    <input type="password" id="signup-password" placeholder="Password">
+                </div>
+                <button id="signup-btn" class="btn-primary" style="margin-bottom: 10px;">登録してログイン</button>
+                <div class="text-center" style="margin-top: 15px;">
+                    <button id="show-login" class="btn-secondary" style="font-size: 0.9rem;">ログイン画面に戻る</button>
+                </div>
+                <div id="signup-error" class="error-msg"
+                    style="display:none; color: var(--error-color); margin-top: 10px;"></div>
+            </section>
+
+
+            <!-- LINK USER SECTION -->
+            <section id="link-user">
+                <h2>ユーザー連携</h2>
+                <p style="margin-bottom: 20px;">あなたの対局データとして使用するユーザーを選択してください。</p>
+                <div class="form-group">
+                    <label>新しくユーザーを作成</label>
+                    <input type="text" id="link-user-new-name" placeholder="新しいユーザー名">
+                </div>
+                <div class="text-center" style="margin: 20px 0;">または</div>
+                <div class="form-group">
+                    <label>既存のユーザーから選択</label>
+                    <select id="link-user-select" class="user-select">
+                        <option value="" disabled selected>選択してください...</option>
+                    </select>
+                </div>
+                <button id="link-user-btn" class="btn-primary">保存して開始</button>
+            </section>
+
             <!-- HOME / SESSION SETUP SECTION -->
-            <section id="home" class="active">
+            <section id="home">
                 <h2>新規セット</h2>
                 <div id="setup-restriction-msg" class="restricted-access-msg"
                     style="display:none; padding:15px; background:rgba(255,165,0,0.1); border:1px solid orange; border-radius:8px; margin-bottom:20px; color:orange;">
@@ -187,13 +244,15 @@
                     <button id="cancel-input" class="btn-secondary">キャンセル</button>
                     <span>スコア入力</span>
                 </div>
-                
+
                 <!-- Mode Toggle -->
                 <div style="display:flex; justify-content:center; margin-bottom:15px; gap:10px;">
-                    <button type="button" id="mode-points" class="btn-primary" style="font-size:0.9rem; padding:5px 15px;">点数入力 (自動計算)</button>
-                    <button type="button" id="mode-direct" class="btn-secondary" style="font-size:0.9rem; padding:5px 15px;">スコア直接入力</button>
+                    <button type="button" id="mode-points" class="btn-primary"
+                        style="font-size:0.9rem; padding:5px 15px;">点数入力 (自動計算)</button>
+                    <button type="button" id="mode-direct" class="btn-secondary"
+                        style="font-size:0.9rem; padding:5px 15px;">スコア直接入力</button>
                 </div>
-                
+
                 <div id="score-restriction-msg" class="restricted-access-msg"
                     style="display:none; padding:10px; background:rgba(255,165,0,0.1); border:1px solid orange; border-radius:8px; margin-bottom:20px; color:orange; font-size:0.9rem;">
                     ⚠️ 対局結果を保存するには、ユーザー設定が必要です。
@@ -399,19 +458,38 @@
     <!-- User Profile Modal -->
     <div id="user-profile-modal" class="modal" style="display: none;">
         <div class="modal-content">
-            <h3 style="margin-top: 0;">ユーザー設定</h3>
+            <h3 style="margin-top: 0;">アカウント情報</h3>
 
             <div class="form-group">
-                <label style="font-size: 1rem; font-weight: 600;">ユーザー名</label>
-                <select id="profile-user-select" class="user-select"
-                    style="width: 100%; padding: 12px; font-size: 1rem;">
-                    <option value="">(未選択)</option>
-                </select>
+                <label style="font-size: 0.9rem; color: var(--text-secondary);">ユーザー名</label>
+                <div id="profile-game-name"
+                    style="font-size: 1.2rem; font-weight: bold; margin-bottom: 15px; color: var(--text-primary);">
+                </div>
+
+                <label style="font-size: 0.9rem; color: var(--text-secondary);">メールアドレス</label>
+                <div id="profile-email" style="font-size: 1rem; margin-bottom: 15px; color: var(--text-primary);"></div>
+
+                <!-- Password Change Toggle -->
+                <button id="show-password-change" class="btn-secondary"
+                    style="font-size: 0.9rem; padding: 8px 12px; margin-bottom: 10px;">パスワードを変更する</button>
+
+                <!-- Password Change Form (Hidden by default) -->
+                <div id="password-change-form"
+                    style="display: none; margin-top: 15px; padding: 15px; background: rgba(255, 255, 255, 0.05); border-radius: 8px;">
+                    <label style="font-size: 0.9rem;">新しいパスワード (6文字以上)</label>
+                    <input type="password" id="new-password-input" placeholder="New Password"
+                        style="margin-top: 5px; margin-bottom: 10px;">
+                    <div style="display: flex; gap: 10px; justify-content: flex-end;">
+                        <button id="cancel-password-change" class="btn-secondary"
+                            style="font-size: 0.9rem;">キャンセル</button>
+                        <button id="update-password-btn" class="btn-primary" style="font-size: 0.9rem;">変更を保存</button>
+                    </div>
+                </div>
             </div>
 
-            <div style="display: flex; gap: 10px; justify-content: flex-end; margin-top: 25px;">
-                <button id="close-profile-modal" class="btn-secondary" style="width: auto;">キャンセル</button>
-                <button id="save-profile-user" class="btn-primary" style="width: auto;">保存</button>
+            <div style="display: flex; gap: 10px; justify-content: space-between; margin-top: 25px;">
+                <button id="close-profile-modal" class="btn-secondary" style="width: auto;">閉じる</button>
+                <button id="sign-out-btn" class="btn-danger" style="width: auto;">サインアウト</button>
             </div>
         </div>
     </div>
@@ -419,6 +497,7 @@
     <!-- Firebase Compat (Global) -->
     <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-auth-compat.js"></script>
 
     <script src="sw.js"></script>
     <script src="js/mahjong.js"></script>
