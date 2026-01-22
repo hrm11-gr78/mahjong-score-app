@@ -153,8 +153,6 @@ window.Settlement = {
                     <select id="expense-type" onchange="const input = document.getElementById('expense-custom-note'); input.style.display = this.value === 'その他' ? 'block' : 'none'; if(this.value !== 'その他') input.value = '';" style="width: 100%; padding: 8px; background: #0f172a; color: #fff; border: 1px solid #334155; border-radius: 4px; margin-bottom: 5px;">
                         <option value="場代">場代</option>
                         <option value="飲食代">飲食代</option>
-                        <option value="飲み物">飲み物</option>
-                        <option value="交通費">交通費</option>
                         <option value="その他">その他 (入力)</option>
                     </select>
                     <input type="text" id="expense-custom-note" placeholder="項目名を入力" style="display: none; width: 100%; padding: 8px; background: #0f172a; color: #fff; border: 1px solid #334155; border-radius: 4px;">
@@ -168,19 +166,18 @@ window.Settlement = {
                 <div style="margin-bottom: 15px;">
                     <label style="display: block; margin-bottom: 5px; font-size: 0.9rem;">対象（誰の分？）</label>
                     <div style="display: flex; flex-direction: column; gap: 8px; background: #0f172a; padding: 10px; border-radius: 4px; border: 1px solid #334155;">
-                        <label style="display: flex; align-items: center; gap: 8px;">
-                            <input type="checkbox" id="check-all" onchange="document.querySelectorAll('.player-check').forEach(c => c.checked = this.checked)" checked>
-                            <span style="font-weight: bold; color: #fbbf24;">全員</span>
+                        <label style="display: grid; grid-template-columns: 24px 1fr; align-items: center; width: 100%; cursor: pointer;">
+                            <input type="checkbox" id="check-all" onchange="document.querySelectorAll('.player-check').forEach(c => c.checked = this.checked)" checked style="margin: 0;">
+                            <span style="font-weight: bold; color: #fbbf24; white-space: nowrap;">全員</span>
                         </label>
                         <hr style="border: 0; border-top: 1px solid #334155; width: 100%; margin: 5px 0;">
                         ${session.players.map(p => `
-                            <label style="display: flex; align-items: center; gap: 8px;">
-                                <input type="checkbox" class="player-check" value="${p}" checked onchange="const all = [...document.querySelectorAll('.player-check')]; document.getElementById('check-all').checked = all.every(c => c.checked)">
-                                <span>${p}</span>
+                            <label style="display: grid; grid-template-columns: 24px 1fr; align-items: center; width: 100%; cursor: pointer;">
+                                <input type="checkbox" class="player-check" value="${p}" checked onchange="const all = [...document.querySelectorAll('.player-check')]; document.getElementById('check-all').checked = all.every(c => c.checked)" style="margin: 0;">
+                                <span style="white-space: nowrap;">${p}</span>
                             </label>
                         `).join('')}
                     </div>
-                    <p style="font-size:0.8rem; color:#94a3b8; margin-top:5px;">※ 選択したメンバーで等分されます。</p>
                 </div>
                 <div style="margin-bottom: 20px;">
                     <label style="display: block; margin-bottom: 5px; font-size: 0.9rem;">金額</label>
