@@ -37,6 +37,41 @@ window.AppStorage.getUsers = async function () {
     }
 };
 
+window.AppStorage.getUsersWithDetails = async function () {
+    try {
+        const snapshot = await db.collection("users").orderBy("name").get();
+        const users = [];
+        snapshot.forEach((doc) => {
+            const data = doc.data();
+            users.push({
+                name: data.name,
+                title: data.title || ""
+            });
+        });
+        return users;
+    } catch (e) {
+        console.error("getUsersWithDetails failed:", e);
+        return [];
+    }
+};
+
+window.AppStorage.updateUserTitle = async function (name, title) {
+    try {
+        await db.collection("users").doc(name).update({ title: title });
+        return true;
+    } catch (e) {
+        // If document doesn't exist or other error, try set with merge
+        console.log("Update failed, trying set with merge...", e);
+        try {
+            await db.collection("users").doc(name).set({ title: title }, { merge: true });
+            return true;
+        } catch (e2) {
+            console.error("updateUserTitle failed:", e2);
+            return false;
+        }
+    }
+};
+
 window.AppStorage.getUnlinkedUsers = async function () {
     try {
         const snapshot = await db.collection("users").get();
@@ -252,6 +287,17 @@ window.AppStorage.auth = {
             return { success: true };
         } catch (e) {
             console.error("SignIn failed:", e);
+            return { success: false, error: e.message };
+        }
+    },
+
+    signInWithGoogle: async function () {
+        try {
+            const provider = new firebase.auth.GoogleAuthProvider();
+            await firebase.auth().signInWithPopup(provider);
+            return { success: true };
+        } catch (e) {
+            console.error("Google SignIn failed:", e);
             return { success: false, error: e.message };
         }
     },

@@ -9,6 +9,7 @@
     <link rel="manifest" href="manifest.json">
     <meta name="theme-color" content="#121212">
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2.0.0"></script>
 </head>
 
 <body>
@@ -42,6 +43,15 @@
                     <input type="password" id="login-password" placeholder="Password">
                 </div>
                 <button id="login-btn" class="btn-primary" style="margin-bottom: 10px;">ログイン</button>
+                <div style="display:flex; align-items:center; margin: 15px 0;">
+                    <hr style="flex:1; border:none; border-top:1px solid #333;">
+                    <span style="padding:0 10px; color:#666; font-size:0.8rem;">または</span>
+                    <hr style="flex:1; border:none; border-top:1px solid #333;">
+                </div>
+                <button id="google-login-btn" class="btn-secondary"
+                    style="width:100%; border-color:#4285F4; color:#4285F4; margin-bottom:10px;">
+                    <span style="font-weight:bold;">G</span> Googleでログイン
+                </button>
                 <div class="text-center" style="margin-top: 15px;">
                     <button id="show-signup" class="btn-secondary" style="font-size: 0.9rem;">アカウントを作成する</button>
                 </div>
@@ -61,6 +71,15 @@
                     <input type="password" id="signup-password" placeholder="Password">
                 </div>
                 <button id="signup-btn" class="btn-primary" style="margin-bottom: 10px;">登録してログイン</button>
+                <div style="display:flex; align-items:center; margin: 15px 0;">
+                    <hr style="flex:1; border:none; border-top:1px solid #333;">
+                    <span style="padding:0 10px; color:#666; font-size:0.8rem;">または</span>
+                    <hr style="flex:1; border:none; border-top:1px solid #333;">
+                </div>
+                <button id="google-signup-btn" class="btn-secondary"
+                    style="width:100%; border-color:#4285F4; color:#4285F4; margin-bottom:10px;">
+                    <span style="font-weight:bold;">G</span> Googleで登録
+                </button>
                 <div class="text-center" style="margin-top: 15px;">
                     <button id="show-login" class="btn-secondary" style="font-size: 0.9rem;">ログイン画面に戻る</button>
                 </div>
@@ -398,8 +417,12 @@
             <section id="user-detail">
                 <div class="history-header">
                     <button id="back-to-users" class="btn-secondary">← 戻る</button>
-                    <span id="user-detail-name" style="font-weight:bold;"></span>
+                    <div style="text-align: right;">
+                        <div id="user-detail-name" style="font-weight:bold; font-size: 1.1rem;"></div>
+                    </div>
                 </div>
+
+
 
                 <div id="cumulative-score-card" class="history-card"
                     style="text-align: center; padding: 40px 30px; margin-bottom: 25px; background: linear-gradient(135deg, #1e293b 0%, #334155 100%); border: 2px solid #475569; box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3); position: relative; overflow: hidden;">
