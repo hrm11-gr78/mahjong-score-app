@@ -1698,6 +1698,23 @@ async function openSession(sessionId) {
     await renderSessionTotal(session);
     renderScoreChart(session);
     renderGameList(session);
+
+    // Settlement UI
+    const container = document.getElementById('session-detail');
+    if (container) {
+        let settDiv = document.getElementById('settlement-area');
+        if (!settDiv) {
+            settDiv = document.createElement('div');
+            settDiv.id = 'settlement-area';
+            // Insert at the end, but before any padding? 
+            // Usually just appendChild is fine
+            container.appendChild(settDiv);
+        }
+        if (window.Settlement) {
+            window.Settlement.render(session, settDiv);
+        }
+    }
+
     navigateTo('session-detail');
 }
 
