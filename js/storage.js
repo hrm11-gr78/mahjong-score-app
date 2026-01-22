@@ -16,7 +16,8 @@ try {
     db = firebase.firestore();
 } catch (e) {
     console.error("Firebase Init Error:", e);
-    alert("データベース接続に失敗しました。インターネット接続を確認してください。");
+    // Alert removed to prevent blocking UI on local/offline usage
+    // alert("データベース接続に失敗しました。インターネット接続を確認してください。");
 }
 
 window.AppStorage = {};
@@ -271,6 +272,13 @@ window.AppStorage.auth = {
     currentUser: null,
 
     init: function (onAuthStateChanged) {
+        if (typeof firebase === 'undefined') {
+            console.error("Firebase is not loaded.");
+            // Determine behavior: Just do nothing? Or call cb with null?
+            // Calling cb(null, null) keeps app in logged-out state.
+            if (onAuthStateChanged) onAuthStateChanged(null, null);
+            return;
+        }
         firebase.auth().onAuthStateChanged(async (user) => {
             this.currentUser = user;
             let linkedUser = null;
@@ -282,6 +290,7 @@ window.AppStorage.auth = {
     },
 
     signIn: async function (email, password) {
+        if (typeof firebase === 'undefined') return { success: false, error: "インターネット未接続のためログインできません。" };
         try {
             await firebase.auth().signInWithEmailAndPassword(email, password);
             return { success: true };
@@ -292,6 +301,7 @@ window.AppStorage.auth = {
     },
 
     signInWithGoogle: async function () {
+        if (typeof firebase === 'undefined') return { success: false, error: "インターネット未接続のためログインできません。" };
         try {
             const provider = new firebase.auth.GoogleAuthProvider();
             await firebase.auth().signInWithPopup(provider);
@@ -303,6 +313,7 @@ window.AppStorage.auth = {
     },
 
     signUp: async function (email, password) {
+        if (typeof firebase === 'undefined') return { success: false, error: "インターネット未接続のため作成できません。" };
         try {
             await firebase.auth().createUserWithEmailAndPassword(email, password);
             return { success: true };
@@ -313,6 +324,7 @@ window.AppStorage.auth = {
     },
 
     signOut: async function () {
+        if (typeof firebase === 'undefined') return { success: true }; // Already effectively out
         try {
             await firebase.auth().signOut();
             return { success: true };

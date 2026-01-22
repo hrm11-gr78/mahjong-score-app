@@ -767,6 +767,42 @@ function calculateUserTitles(userName, allSessions) {
 
     return earnedTitles;
 }
+// Utility: Show Toast Notification
+function showToast(message, duration = 3000) {
+    let toast = document.getElementById('app-toast');
+    if (!toast) {
+        toast = document.createElement('div');
+        toast.id = 'app-toast';
+        toast.style.cssText = `
+            position: fixed;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            background-color: rgba(50, 50, 50, 0.9);
+            color: #fff;
+            padding: 10px 20px;
+            border-radius: 4px;
+            z-index: 9999;
+            font-size: 0.9rem;
+            pointer-events: none;
+            opacity: 0;
+            transition: opacity 0.3s;
+            text-align: center;
+            white-space: pre-line;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.3);
+            max-width: 90%;
+        `;
+        document.body.appendChild(toast);
+    }
+    toast.textContent = message;
+    toast.style.opacity = '1';
+
+    // Clear previous timeout if any mechanism existed, but simpler to just set new one
+    setTimeout(() => {
+        toast.style.opacity = '0';
+    }, duration);
+}
+
 async function renderUserList() {
     if (!userList) return;
 
@@ -809,7 +845,9 @@ async function renderUserList() {
 
         // Calculate Titles
         const myTitles = calculateUserTitles(user, sessions);
-        const titleIcons = myTitles.map(t => `<span title="${t.name}\n${t.description}" style="margin-right:2px;">${t.icon}</span>`).join('');
+        const titleIcons = myTitles.map(t =>
+            `<span class="title-icon" data-name="${t.name}" data-desc="${t.description}" style="margin-right:2px; cursor:pointer;" title="${t.name}\n${t.description}">${t.icon}</span>`
+        ).join('');
 
         const li = document.createElement('li');
 
@@ -823,28 +861,44 @@ async function renderUserList() {
         const scoreSign = totalScore > 0 ? '+' : '';
 
         // Rich List Item Layout
-        // Use a grid or flex for the right side stats to keep them aligned and compact
+        // Use classes for responsive layout
         li.innerHTML = `
             <div style="display:flex; justify-content:space-between; align-items:center; width:100%;">
-                <div style="display:flex; align-items:center; gap:8px; flex:1; min-width:0;">
+                <div class="user-info-area" style="display:flex; align-items:center; gap:8px; flex:1; min-width:0;">
                     <span class="user-name-link" style="cursor:pointer; text-decoration:underline; font-size:1.0rem; font-weight:bold; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${user}</span>
                     <div style="display:flex; align-items:center; flex-shrink:0;">
-                         ${titleIcons ? `<div style="font-size:1.0rem; cursor:help;">${titleIcons}</div>` : ''}
+                         ${titleIcons ? `<div style="font-size:1.0rem;">${titleIcons}</div>` : ''}
                     </div>
                 </div>
                 <div style="display:flex; align-items:center; gap:5px; flex-shrink:0;">
-                    <div style="display:flex; align-items:center; gap:10px; font-size:0.75rem; color:#cbd5e1; background:#1e293b; padding:6px 10px; border:1px solid #334155; border-radius:6px;">
-                        <span style="min-width:30px; text-align:right;">${gameCount}戦</span>
-                        <div style="width:1px; height:12px; background:#475569;"></div>
-                        <span style="min-width:45px; text-align:right; color:${scoreColor}; font-weight:bold;">${scoreSign}${totalScore}</span>
-                        <div style="width:1px; height:12px; background:#475569;"></div>
-                        <span style="min-width:55px; text-align:right; color:#94a3b8;">Avg <span style="color:#e2e8f0;">${avgRank}</span></span>
+                    <div class="user-stats-box">
+                        <span class="stat-item user-game-count">${gameCount}戦</span>
+                        <div class="stat-separator"></div>
+                        <span class="stat-item user-total-score" style="color:${scoreColor}; font-weight:bold;">${scoreSign}${totalScore}</span>
+                        <div class="stat-separator"></div>
+                        <span class="stat-item user-avg-rank">Avg <span style="color:#e2e8f0;">${avgRank}</span></span>
                     </div>
                     ${deleteBtnHtml}
                 </div>
             </div>
         `;
-        li.querySelector('.user-name-link').addEventListener('click', () => openUserDetail(user));
+
+        // Navigation Handler
+        li.querySelector('.user-name-link').addEventListener('click', (e) => {
+            e.stopPropagation();
+            openUserDetail(user);
+        });
+
+        // Title Icon Click Handler (Delegation within the item, or just attach to spans)
+        li.querySelectorAll('.title-icon').forEach(icon => {
+            icon.addEventListener('click', (e) => {
+                e.stopPropagation(); // Stop bubbling so row click (if enabled) doesn't fire
+                const name = icon.dataset.name;
+                const desc = icon.dataset.desc;
+                showToast(`【${name}】\n${desc}`);
+            });
+        });
+
         userList.appendChild(li);
     });
 
@@ -986,7 +1040,13 @@ async function openUserDetail(userName) {
             gap: 5px;
             opacity: ${opacity};
             min-height: 80px;
+            cursor: pointer;
+            transition: transform 0.1s;
         `;
+
+        // Hover effect for desktop
+        card.onmouseover = () => card.style.transform = 'scale(1.02)';
+        card.onmouseout = () => card.style.transform = 'scale(1)';
 
         if (isUnlocked) {
             card.innerHTML = `
@@ -1002,6 +1062,16 @@ async function openUserDetail(userName) {
             `;
             card.title = "未獲得";
         }
+
+        // Add Click Listener for Toast
+        card.addEventListener('click', (e) => {
+            e.stopPropagation();
+            if (isUnlocked) {
+                showToast(`【${title.name}】\n${title.description}\nランク: ${title.rank.toUpperCase()}`);
+            } else {
+                showToast(`【未獲得】\n条件を満たすと獲得できます`);
+            }
+        });
 
         grid.appendChild(card);
     });
@@ -1609,12 +1679,92 @@ async function openSession(sessionId) {
     if (!session) return;
 
     if (sessionTitle) sessionTitle.textContent = `${session.date}`;
-    if (sessionRateSelect) sessionRateSelect.value = session.rate || 0;
+
+    // Rate Select Lock
+    if (sessionRateSelect) {
+        sessionRateSelect.value = session.rate || 0;
+        sessionRateSelect.disabled = !!session.locked;
+    }
+
+    // Add Game Button Lock
+    const addGameBtn = document.getElementById('add-game-btn');
+    if (addGameBtn) {
+        addGameBtn.style.display = session.locked ? 'none' : 'flex';
+    }
+
+    // Finish/Resume Button
+    renderSessionControls(session);
 
     await renderSessionTotal(session);
     renderScoreChart(session);
     renderGameList(session);
+
+    // Settlement UI
+    const container = document.getElementById('session-detail');
+    if (container) {
+        let settDiv = document.getElementById('settlement-area');
+        if (!settDiv) {
+            settDiv = document.createElement('div');
+            settDiv.id = 'settlement-area';
+            // Insert at the end, but before any padding? 
+            // Usually just appendChild is fine
+            container.appendChild(settDiv);
+        }
+        if (window.Settlement) {
+            window.Settlement.render(session, settDiv);
+        }
+    }
+
     navigateTo('session-detail');
+}
+
+function renderSessionControls(session) {
+    const container = document.getElementById('session-detail');
+    let controlsDiv = document.getElementById('session-controls-area');
+
+    if (!controlsDiv) {
+        controlsDiv = document.createElement('div');
+        controlsDiv.id = 'session-controls-area';
+        controlsDiv.style.cssText = 'margin: 20px 0; text-align: center;';
+        // Insert before the game list or chart? 
+        // Let's put it after the total table (which is top) and chart, before game list?
+        // Or at the very bottom? User said "End of set", implies functionality.
+        // Let's ensure it's accessible.
+        // Finding a good insertion point:
+        const gameListArea = document.getElementById('game-list');
+        if (gameListArea) {
+            gameListArea.parentNode.insertBefore(controlsDiv, gameListArea);
+        } else {
+            container.appendChild(controlsDiv);
+        }
+    }
+
+    controlsDiv.innerHTML = '';
+    const btn = document.createElement('button');
+    const isLocked = !!session.locked;
+
+    if (isLocked) {
+        btn.textContent = 'セット再開 (ロック解除)';
+        btn.className = 'btn-secondary'; // or distinct style
+        btn.style.cssText = 'width: 100%; padding: 12px; font-weight: bold; background: #475569; color: #cbd5e1;';
+        btn.onclick = async () => {
+            if (confirm('セットを再開しますか？\n修正が可能になります。')) {
+                await window.AppStorage.updateSession(session.id, { locked: false });
+                await openSession(session.id);
+            }
+        };
+    } else {
+        btn.textContent = 'セット終了';
+        btn.className = 'btn-primary';
+        btn.style.cssText = 'width: 100%; padding: 12px; font-weight: bold; background: #ef4444;'; // Reddish to signify "Stop"
+        btn.onclick = async () => {
+            if (confirm('セットを終了しますか？\n対局の追加や編集ができなくなります。')) {
+                await window.AppStorage.updateSession(session.id, { locked: true });
+                await openSession(session.id);
+            }
+        };
+    }
+    controlsDiv.appendChild(btn);
 }
 
 async function renderSessionTotal(session) {
@@ -1782,6 +1932,9 @@ function renderScoreChart(session) {
                         labels: {
                             color: '#ffffff'
                         }
+                    },
+                    datalabels: {
+                        display: false
                     }
                 }
             }
@@ -1819,11 +1972,17 @@ function renderGameList(session) {
              `;
         });
 
+        // Edit/Delete Buttons logic
+        // Only show if Admin AND Session is NOT locked
+        const isAdmin = localStorage.getItem('deviceUser') === 'ヒロム';
+        const isLocked = !!session.locked;
+        const showControls = isAdmin && !isLocked;
+
         card.innerHTML = `
             <div class="history-header">
                 <span>Game ${session.games.length - index}</span>
                 <div>
-                    ${localStorage.getItem('deviceUser') === 'ヒロム'
+                    ${showControls
                 ? `
                         <button class="btn-secondary btn-sm edit-game-btn" data-id="${game.id}" style="padding: 2px 8px; font-size: 0.8rem; margin-right: 5px;">修正</button>
                         <button class="btn-danger btn-sm delete-game-btn" data-id="${game.id}" style="padding: 2px 8px; font-size: 0.8rem;">削除</button>
