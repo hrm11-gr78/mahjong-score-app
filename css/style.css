@@ -567,3 +567,49 @@ section {
 section.active {
     display: block;
 }
+
+/* User List Stats Responsive Layout */
+.user-stats-box {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 0.75rem;
+    color: #cbd5e1;
+    background: #1e293b;
+    padding: 6px 10px;
+    border: 1px solid #334155;
+    border-radius: 6px;
+}
+
+.stat-separator {
+    width: 1px;
+    height: 12px;
+    background: #475569;
+    display: block;
+}
+
+@media (max-width: 480px) {
+    .user-stats-box {
+        flex-direction: column;
+        align-items: flex-end;
+        gap: 2px;
+        padding: 4px 6px;
+        min-width: 70px; /* Minimal width to keep it neat */
+    }
+    
+    .stat-separator {
+        display: none;
+    }
+
+    .stat-item {
+        /* Ensures numbers align nicely */
+        text-align: right;
+        width: 100%;
+        line-height: 1.2;
+    }
+    
+    /* Slightly smaller font on very small screens if needed */
+    .user-stats-box {
+        font-size: 0.7rem; 
+    }
+}
