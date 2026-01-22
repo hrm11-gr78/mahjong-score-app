@@ -5,6 +5,28 @@ const navButtons = document.querySelectorAll('nav button');
 const sections = document.querySelectorAll('section');
 const userSelects = document.querySelectorAll('.user-select');
 
+// Auth Elements
+const loginSection = document.getElementById('login');
+const signupSection = document.getElementById('signup');
+const linkUserSection = document.getElementById('link-user');
+const loginEmailInput = document.getElementById('login-email');
+const loginPasswordInput = document.getElementById('login-password');
+const loginBtn = document.getElementById('login-btn');
+const showSignupBtn = document.getElementById('show-signup');
+const loginError = document.getElementById('login-error');
+
+const signupEmailInput = document.getElementById('signup-email');
+const signupPasswordInput = document.getElementById('signup-password');
+const signupBtn = document.getElementById('signup-btn');
+const showLoginBtn = document.getElementById('show-login');
+const signupError = document.getElementById('signup-error');
+
+const linkUserSelect = document.getElementById('link-user-select');
+const linkUserNewNameInput = document.getElementById('link-user-new-name');
+const linkUserBtn = document.getElementById('link-user-btn');
+
+// Session Setup
+
 // Session Setup
 const sessionSetupForm = document.getElementById('session-setup-form');
 const sessionDateInput = document.getElementById('session-date');
@@ -66,22 +88,61 @@ const rouletteColors = [
 ];
 
 // --- Initialization ---
+// --- Initialization ---
 async function init() {
     // 1. Synchronous Setup (Immediate)
-    // Set default date to today
     if (sessionDateInput) {
         sessionDateInput.valueAsDate = new Date();
     }
 
-    // Setup UI interactivity immediately
     setupScoreValidation();
 
-    // Trigger initial navigation to set UI state
-    navigateTo('home');
+    // 2. Initialize Auth & State
+    window.AppStorage.auth.init(handleAuthStateChanged);
 
-    // 2. Asynchronous Data Loading
+    // 3. User & Session Data is loaded AFTER auth is confirmed (in handleAuthStateChanged)
+}
+
+async function handleAuthStateChanged(user, linkedUser) {
+    const nav = document.querySelector('nav');
+    const profileBtn = document.getElementById('header-profile-btn');
+
+    if (!user) {
+        // Not logged in -> Show Login
+        if (nav) nav.style.display = 'none';
+        if (profileBtn) profileBtn.style.display = 'none';
+        navigateTo('login');
+        return;
+    }
+
+    // Logged in
+    console.log("Logged in as:", user.email);
+
+    // Check if linked to Game User
+    if (!linkedUser) {
+        console.log("User not linked. Redirecting to Link User Screen.");
+        // Not linked -> Show Link User Screen
+        // Ensure other sections are hidden
+        if (nav) nav.style.display = 'none';
+        if (profileBtn) profileBtn.style.display = 'none';
+
+        // We need to load users first to populate the select
+        await renderUserOptions();
+        navigateTo('link-user');
+        return;
+    }
+
+    // Linked! -> Set Device User and Go Home
+    console.log("Linked Game User:", linkedUser.name);
+
+    // Show Nav and Profile Button
+    if (nav) nav.style.display = 'flex';
+    if (profileBtn) profileBtn.style.display = 'block';
+
+    localStorage.setItem('deviceUser', linkedUser.name); // Sync local storage for compat
+
+    // Load Data
     try {
-        // Load data in parallel where possible or sequentially if needed
         await Promise.all([
             renderUserOptions(),
             renderUserList(),
@@ -90,15 +151,127 @@ async function init() {
             loadNewSetFormDefaults()
         ]);
 
-        // Initialize Roulette after base data, if on roulette page or needed
         if (rouletteCanvas) {
             await initRoulette();
         }
     } catch (e) {
-        console.error("Initialization / Data Loading Failed:", e);
-        // Do not alert here to avoid annoying popups if offline or slight delay
-        // Maybe show a "Connection Error" toast if strictly needed.
+        console.error("Data Loading Failed:", e);
     }
+
+    // Go to Home
+    navigateTo('home');
+}
+
+// --- Auth Event Listeners ---
+
+if (loginBtn) {
+    loginBtn.addEventListener('click', async () => {
+        const email = loginEmailInput.value;
+        const password = loginPasswordInput.value;
+        if (!email || !password) {
+            showError(loginError, "メールアドレスとパスワードを入力してください。");
+            return;
+        }
+
+        const result = await window.AppStorage.auth.signIn(email, password);
+        if (!result.success) {
+            showError(loginError, "ログインに失敗しました: " + result.error);
+        }
+    });
+}
+
+if (signupBtn) {
+    signupBtn.addEventListener('click', async () => {
+        const email = signupEmailInput.value;
+        const password = signupPasswordInput.value;
+        if (!email || !password) {
+            showError(signupError, "メールアドレスとパスワードを入力してください。");
+            return;
+        }
+
+        const result = await window.AppStorage.auth.signUp(email, password);
+        if (!result.success) {
+            let msg = "登録に失敗しました: " + result.error;
+            if (result.error && result.error.includes('email-already-in-use')) {
+                msg = "このメールアドレスは既に使用されています。ログインしてください。";
+            }
+            showError(signupError, msg);
+        } else {
+            // Success! 
+            // Manually transition to Link User screen to ensure smooth flow
+            // Hide Login UI elements
+            const nav = document.querySelector('nav');
+            const profileBtn = document.getElementById('header-profile-btn');
+            if (nav) nav.style.display = 'none';
+            if (profileBtn) profileBtn.style.display = 'none';
+
+            // Load options and navigate
+            await renderUserOptions();
+            navigateTo('link-user');
+        }
+    });
+}
+
+const googleLoginBtn = document.getElementById('google-login-btn');
+if (googleLoginBtn) {
+    googleLoginBtn.addEventListener('click', async () => {
+        const result = await window.AppStorage.auth.signInWithGoogle();
+        if (!result.success) {
+            showError(loginError, "Googleログインに失敗しました: " + result.error);
+        }
+    });
+}
+
+const googleSignupBtn = document.getElementById('google-signup-btn');
+if (googleSignupBtn) {
+    googleSignupBtn.addEventListener('click', async () => {
+        const result = await window.AppStorage.auth.signInWithGoogle();
+        if (!result.success) {
+            showError(signupError, "Google登録に失敗しました: " + result.error);
+        }
+    });
+}
+
+if (showSignupBtn) {
+    showSignupBtn.addEventListener('click', () => navigateTo('signup'));
+}
+
+if (showLoginBtn) {
+    showLoginBtn.addEventListener('click', () => navigateTo('login'));
+}
+
+if (linkUserBtn) {
+    linkUserBtn.addEventListener('click', async () => {
+        let gameUserName = linkUserSelect.value;
+        const newName = linkUserNewNameInput.value.trim();
+
+        if (newName) {
+            gameUserName = newName;
+            // Validate availability? existing checks in linkUser/addUser could handle it
+        }
+
+        if (!gameUserName) {
+            alert("ユーザーを選択または入力してください。");
+            return;
+        }
+
+        const currentUser = window.AppStorage.auth.currentUser;
+        if (!currentUser) return; // Should not happen
+
+        const success = await window.AppStorage.auth.linkUser(currentUser.uid, gameUserName);
+        if (success) {
+            // Re-trigger auth state check to proceed
+            const linked = await window.AppStorage.auth.getLinkedUser(currentUser.uid);
+            handleAuthStateChanged(currentUser, linked);
+        } else {
+            alert("連携に失敗しました。");
+        }
+    });
+}
+
+function showError(element, message) {
+    element.textContent = message;
+    element.style.display = 'block';
 }
 
 async function loadNewSetFormDefaults() {
@@ -180,6 +353,7 @@ function setupNavigation() {
 
 function navigateTo(targetId) {
     if (!targetId) return;
+    console.log(`Navigating to: ${targetId}. Found ${sections.length} sections.`);
 
     // Update Buttons
     navButtons.forEach(b => {
@@ -193,8 +367,13 @@ function navigateTo(targetId) {
     // Update Sections
     sections.forEach(s => {
         s.classList.remove('active');
+        // Force inline style toggle to ensure visibility
+        s.style.display = 'none';
+
         if (s.id === targetId) {
             s.classList.add('active');
+            s.style.display = 'block';
+            console.log("Navigated to:", targetId); // Debug log
         }
     });
 
@@ -272,18 +451,21 @@ const headerProfileBtn = document.getElementById('header-profile-btn');
 const userProfileModal = document.getElementById('user-profile-modal');
 const profileUserSelect = document.getElementById('profile-user-select');
 const closeProfileModalBtn = document.getElementById('close-profile-modal');
-const saveProfileUserBtn = document.getElementById('save-profile-user');
+const signOutBtn = document.getElementById('sign-out-btn');
 
 if (headerProfileBtn) {
     headerProfileBtn.addEventListener('click', async () => {
-        // Populate select with latest users
-        await renderUserOptions();
+        // Load current info
+        const deviceUser = localStorage.getItem('deviceUser') || '未設定';
+        const currentUser = window.AppStorage.auth.currentUser;
+        const email = currentUser ? currentUser.email : '未ログイン';
 
-        // Load current device user
-        const savedDeviceUser = localStorage.getItem('deviceUser');
-        if (profileUserSelect && savedDeviceUser) {
-            profileUserSelect.value = savedDeviceUser;
-        }
+        // Update Modal Content
+        const nameEl = document.getElementById('profile-game-name');
+        const emailEl = document.getElementById('profile-email');
+
+        if (nameEl) nameEl.textContent = deviceUser;
+        if (emailEl) emailEl.textContent = email;
 
         // Show modal
         if (userProfileModal) {
@@ -300,39 +482,73 @@ if (closeProfileModalBtn) {
     });
 }
 
-if (saveProfileUserBtn) {
-    saveProfileUserBtn.addEventListener('click', async () => {
-        try {
-            if (profileUserSelect) {
-                const selectedUser = profileUserSelect.value;
-                if (selectedUser) {
-                    localStorage.setItem('deviceUser', selectedUser);
-                } else {
-                    localStorage.removeItem('deviceUser');
-                }
-
-                // Refresh UI (Don't block modal closing if these fail)
-                Promise.all([
-                    renderUserList(),
-                    renderSessionList()
-                ]).catch(err => console.error("UI Refresh Failed:", err));
-
-                updateActionRestrictions();
-            }
-        } catch (e) {
-            console.error("Save Profile Failed:", e);
-        } finally {
+if (signOutBtn) {
+    signOutBtn.addEventListener('click', async () => {
+        if (confirm('サインアウトしますか？')) {
             if (userProfileModal) {
                 userProfileModal.style.display = 'none';
             }
-            alert('ユーザー設定を保存しました。');
+            await window.AppStorage.auth.signOut();
+            // handleAuthStateChanged will handle the rest (redirect, etc.)
+        }
+    });
+}
+
+// Password Change Features
+const showPasswordChangeBtn = document.getElementById('show-password-change');
+const passwordChangeForm = document.getElementById('password-change-form');
+const cancelPasswordChangeBtn = document.getElementById('cancel-password-change');
+const updatePasswordBtn = document.getElementById('update-password-btn');
+const newPasswordInput = document.getElementById('new-password-input');
+
+if (showPasswordChangeBtn) {
+    showPasswordChangeBtn.addEventListener('click', () => {
+        passwordChangeForm.style.display = 'block';
+        showPasswordChangeBtn.style.display = 'none';
+    });
+}
+
+if (cancelPasswordChangeBtn) {
+    cancelPasswordChangeBtn.addEventListener('click', () => {
+        passwordChangeForm.style.display = 'none';
+        showPasswordChangeBtn.style.display = 'inline-block';
+        if (newPasswordInput) newPasswordInput.value = '';
+    });
+}
+
+if (updatePasswordBtn) {
+    updatePasswordBtn.addEventListener('click', async () => {
+        const newPassword = newPasswordInput.value;
+        if (!newPassword || newPassword.length < 6) {
+            alert('パスワードは6文字以上で入力してください。');
+            return;
+        }
+
+        const result = await window.AppStorage.auth.updatePassword(newPassword);
+        if (result.success) {
+            alert('パスワードを変更しました。');
+            passwordChangeForm.style.display = 'none';
+            showPasswordChangeBtn.style.display = 'inline-block';
+            newPasswordInput.value = '';
+        } else {
+            if (result.error === 'auth/requires-recent-login') {
+                alert('セキュリティのため、再ログインが必要です。ログアウトします。');
+                await window.AppStorage.auth.signOut();
+                if (userProfileModal) userProfileModal.style.display = 'none';
+            } else {
+                alert('パスワードの変更に失敗しました: ' + result.message);
+            }
         }
     });
 }
 
 // --- User Management ---
 async function renderUserOptions() {
-    const users = await window.AppStorage.getUsers();
+    const allUsers = await window.AppStorage.getUsers();
+
+    // For the User Link Screen, we only want unlinked users
+    // optimization: only fetch this if we are likely to need it (or just fetch always for simplicity)
+    const unlinkedUsers = await window.AppStorage.getUnlinkedUsers();
 
     // Update all user-select dropdowns (Game Setup & Settings)
     // We target .user-select class.
@@ -340,7 +556,11 @@ async function renderUserOptions() {
 
     selects.forEach(select => {
         const currentVal = select.value;
+        const isLinkUserSelect = select.id === 'link-user-select';
         const isProfileUserSelect = select.id === 'profile-user-select';
+
+        // Choose which list to use
+        const userSource = isLinkUserSelect ? unlinkedUsers : allUsers;
 
         // Reset options
         if (isProfileUserSelect) {
@@ -349,15 +569,15 @@ async function renderUserOptions() {
             select.innerHTML = '<option value="" disabled selected>選択...</option>';
         }
 
-        users.forEach(user => {
+        userSource.forEach(user => {
             const option = document.createElement('option');
             option.value = user;
             option.textContent = user;
             select.appendChild(option);
         });
 
-        // Restore value if still valid
-        if (currentVal && users.includes(currentVal)) {
+        // Restore value if still valid in the new list
+        if (currentVal && userSource.includes(currentVal)) {
             select.value = currentVal;
         }
     });
@@ -366,7 +586,7 @@ async function renderUserOptions() {
     const deviceUserSelect = document.getElementById('device-user-select');
     if (deviceUserSelect) {
         const savedDeviceUser = localStorage.getItem('deviceUser');
-        if (savedDeviceUser && users.includes(savedDeviceUser)) {
+        if (savedDeviceUser && allUsers.includes(savedDeviceUser)) {
             deviceUserSelect.value = savedDeviceUser;
         }
     }
@@ -410,39 +630,225 @@ function setupSessionFormToggles() {
         btn.dataset.listenerAttached = 'true';
     });
 }
+// -------------------------------------------------------------------------
+// TITLE SYSTEM
+// -------------------------------------------------------------------------
 
+const TITLES = [
+    // Special
+    { id: 'founder', name: '創設者', icon: '👑', category: 'special', rank: 'special', check: (stats) => stats.userName === 'ヒロム', description: 'このアプリの創設者' },
+
+    // Consecutive Top
+    { id: 'top_3', name: '青龍', icon: '🐉', category: 'streak_top', rank: 'bronze', threshold: 3, description: '3連続トップ' },
+    { id: 'top_5', name: '白虎', icon: '🐯', category: 'streak_top', rank: 'silver', threshold: 5, description: '5連続トップ' },
+    { id: 'top_10', name: '朱雀', icon: '🦅', category: 'streak_top', rank: 'gold', threshold: 10, description: '10連続トップ' },
+
+    // Consecutive Rentai (1st or 2nd)
+    { id: 'rentai_3', name: '駆け出し', icon: '🐣', category: 'streak_rentai', rank: 'bronze', threshold: 3, description: '3連続連対' },
+    { id: 'rentai_5', name: '手練れ', icon: '⚔️', category: 'streak_rentai', rank: 'silver', threshold: 5, description: '5連続連対' },
+    { id: 'rentai_10', name: '鉄壁', icon: '🏰', category: 'streak_rentai', rank: 'gold', threshold: 10, description: '10連続連対' },
+
+    // Consecutive Avoid Last (Not 4th)
+    { id: 'avoid_5', name: '慎重居士', icon: '🦉', category: 'streak_avoid', rank: 'bronze', threshold: 5, description: '5連続ラス回避' },
+    { id: 'avoid_10', name: '不沈艦', icon: '⚓', category: 'streak_avoid', rank: 'silver', threshold: 10, description: '10連続ラス回避' },
+    { id: 'avoid_20', name: '不死鳥', icon: '🔥', category: 'streak_avoid', rank: 'gold', threshold: 20, description: '20連続ラス回避' },
+
+    // High Score
+    { id: 'score_50k', name: '大物手', icon: '🧨', category: 'high_score', rank: 'bronze', threshold: 50000, description: '持ち点5万点以上' },
+    { id: 'score_75k', name: '役満級', icon: '💣', category: 'high_score', rank: 'silver', threshold: 75000, description: '持ち点7万5千点以上' },
+    { id: 'score_100k', name: '伝説', icon: '🐲', category: 'high_score', rank: 'gold', threshold: 100000, description: '持ち点10万点以上' },
+
+    // Game Count
+    { id: 'games_30', name: '闘士', icon: '🥊', category: 'game_count', rank: 'bronze', threshold: 30, description: '対戦数30回以上' },
+    { id: 'games_50', name: '歴戦の勇士', icon: '🎖️', category: 'game_count', rank: 'silver', threshold: 50, description: '対戦数50回以上' },
+    { id: 'games_100', name: '百戦錬磨', icon: '🦾', category: 'game_count', rank: 'gold', threshold: 100, description: '対戦数100回以上' },
+
+    // Total Score
+    { id: 'total_200', name: '勝ち組', icon: '💰', category: 'total_score', rank: 'bronze', threshold: 200, description: '累計スコア+200以上' },
+    { id: 'total_500', name: '黒字請負人', icon: '📈', category: 'total_score', rank: 'silver', threshold: 500, description: '累計スコア+500以上' },
+    { id: 'total_1000', name: 'ミリオネア', icon: '💎', category: 'total_score', rank: 'gold', threshold: 1000, description: '累計スコア+1000以上' },
+
+    // Average Rank (Lower is better, handled by check or inverted threshold logic in app)
+    // Using 'check' logic for flexibility
+    { id: 'avg_240', name: 'アベレージヒッター', icon: '🎯', category: 'avg_rank', rank: 'bronze', check: (stats) => stats.gameCount >= 30 && stats.avgRank <= 2.40, description: '平均順位2.40以下 (30戦以上)' },
+    { id: 'avg_225', name: '卓上の支配者', icon: '🎩', category: 'avg_rank', rank: 'silver', check: (stats) => stats.gameCount >= 30 && stats.avgRank <= 2.25, description: '平均順位2.25以下 (30戦以上)' },
+    { id: 'avg_210', name: '覇王', icon: '🔱', category: 'avg_rank', rank: 'gold', check: (stats) => stats.gameCount >= 30 && stats.avgRank <= 2.10, description: '平均順位2.10以下 (30戦以上)' },
+];
+
+function getUserStats(userName, allSessions) {
+    if (!allSessions || allSessions.length === 0) return null;
+
+    const userGames = [];
+    allSessions.forEach(s => {
+        s.games.forEach(g => {
+            const p = g.players.find(x => x.name === userName);
+            if (p) {
+                // We need finalScore for total score calculation and to know rank
+                userGames.push({ rank: p.rank, score: p.score, finalScore: p.finalScore, date: s.date });
+            }
+        });
+    });
+
+    if (userGames.length === 0) return { userName, maxTop: 0, maxRen: 0, maxAvoid: 0, highScore: -Infinity, gameCount: 0, totalScore: 0, avgRank: 0 };
+
+    let currentTop = 0; let maxTop = 0;
+    let currentRen = 0; let maxRen = 0;
+    let currentAvoid = 0; let maxAvoid = 0;
+    let highScore = -Infinity;
+    let totalScore = 0;
+    let totalRank = 0;
+
+    // Sorting by date is crucial for streak calculation
+    userGames.sort((a, b) => new Date(a.date) - new Date(b.date));
+
+    userGames.forEach(g => {
+        if (g.rank === 1) currentTop++; else currentTop = 0;
+        if (currentTop > maxTop) maxTop = currentTop;
+
+        if (g.rank <= 2) currentRen++; else currentRen = 0;
+        if (currentRen > maxRen) maxRen = currentRen;
+
+        if (g.rank < 4) currentAvoid++; else currentAvoid = 0;
+        if (currentAvoid > maxAvoid) maxAvoid = currentAvoid;
+
+        if (g.score > highScore) highScore = g.score;
+
+        totalScore += (g.finalScore || 0);
+        totalRank += g.rank;
+    });
+
+    const gameCount = userGames.length;
+    const avgRank = gameCount > 0 ? parseFloat((totalRank / gameCount).toFixed(2)) : 0;
+    totalScore = parseFloat(totalScore.toFixed(1));
+
+    return { userName, maxTop, maxRen, maxAvoid, highScore, gameCount, totalScore, avgRank };
+}
+
+function calculateUserTitles(userName, allSessions) {
+    const stats = getUserStats(userName, allSessions);
+    if (!stats) return TITLES.filter(t => t.check && t.check({ userName })); // Fallback
+
+    const earnedTitles = [];
+
+    // Special
+    TITLES.filter(t => t.category === 'special').forEach(t => {
+        if (t.check && t.check(stats)) earnedTitles.push(t);
+    });
+
+    // Return BEST title in each category for List View
+    // Note: avg_rank titles use the 'check' property, so they are covered by the check logic below if we add a filter for that,
+    // OR we can leave them out of "Best" list view if they are too verbose. A "Best" list usually focuses on streaks/scores.
+    // Let's stick to the main ones for the small icon list.
+    const categories = ['streak_top', 'streak_rentai', 'streak_avoid', 'high_score', 'game_count', 'total_score'];
+    const typeMap = {
+        'streak_top': stats.maxTop,
+        'streak_rentai': stats.maxRen,
+        'streak_avoid': stats.maxAvoid,
+        'high_score': stats.highScore,
+        'game_count': stats.gameCount,
+        'total_score': stats.totalScore
+    };
+
+    categories.forEach(cat => {
+        const value = typeMap[cat];
+        const potential = TITLES.filter(t => t.category === cat && value >= t.threshold);
+        potential.sort((a, b) => b.threshold - a.threshold); // Highest first
+        if (potential.length > 0) earnedTitles.push(potential[0]);
+    });
+
+    // Also need to check 'check' based titles (Average Rank, Founder)
+    // Filter for titles that have a 'check' function AND haven't been added yet (though our categories separation is clean)
+    TITLES.filter(t => t.check).forEach(t => {
+        // Prevent duplicates if by chance it was added (e.g. founder was special)
+        if (!earnedTitles.some(et => et.id === t.id)) {
+            if (t.check(stats)) earnedTitles.push(t);
+        }
+    });
+
+    return earnedTitles;
+}
 async function renderUserList() {
     if (!userList) return;
-    const users = await window.AppStorage.getUsers();
+
+    // Fetch users with details AND all sessions for stats calculation
+    // Note: We don't need getUsersWithDetails anymore since manual titles are removed.
+    // But we need sessions to calculate titles.
+    const [users, sessions] = await Promise.all([
+        window.AppStorage.getUsers(), // Revert to simple list or ignore details
+        window.AppStorage.getSessions()
+    ]);
 
     // Get Device User
     const deviceUser = localStorage.getItem('deviceUser');
+    const isAdmin = deviceUser === 'ヒロム';
+
+    // Toggle Add User Form Visibility
+    const addUserSection = document.getElementById('add-user-section');
+    const userManagementHeader = document.querySelector('#users h2');
+
+    if (newUserNameInput && addUserBtn) {
+        if (isAdmin) {
+            newUserNameInput.style.display = 'inline-block';
+            addUserBtn.style.display = 'inline-block';
+            if (userManagementHeader) userManagementHeader.style.display = 'block';
+        } else {
+            newUserNameInput.style.display = 'none';
+            addUserBtn.style.display = 'none';
+            if (userManagementHeader) userManagementHeader.style.display = 'none';
+        }
+    }
 
     userList.innerHTML = '';
+
     users.forEach(user => {
+        // Calculate Stats using helper
+        const stats = getUserStats(user, sessions);
+        const gameCount = stats ? stats.gameCount : 0;
+        const totalScore = stats ? stats.totalScore : 0;
+        const avgRank = stats && stats.avgRank > 0 ? stats.avgRank.toFixed(2) : '-';
+
+        // Calculate Titles
+        const myTitles = calculateUserTitles(user, sessions);
+        const titleIcons = myTitles.map(t => `<span title="${t.name}\n${t.description}" style="margin-right:2px;">${t.icon}</span>`).join('');
+
         const li = document.createElement('li');
 
         let deleteBtnHtml = '';
-
-        // Show delete button ONLY IF:
-        // 1. A device user IS set
-        // AND
-        // (The listed user IS the device user OR the device user is "ヒロム")
-        if (deviceUser && (deviceUser === user || deviceUser === 'ヒロム')) {
-            deleteBtnHtml = `<button class="btn-danger" data-user="${user}">削除</button>`;
-        } else {
-            deleteBtnHtml = ``;
+        if (isAdmin) {
+            deleteBtnHtml = `<button class="btn-danger" data-user="${user}" style="margin-left:5px; padding:2px 8px; font-size:0.7rem;">削除</button>`;
         }
 
+        // Score Color
+        const scoreColor = totalScore > 0 ? '#4ade80' : (totalScore < 0 ? '#f87171' : '#94a3b8');
+        const scoreSign = totalScore > 0 ? '+' : '';
+
+        // Rich List Item Layout
+        // Use a grid or flex for the right side stats to keep them aligned and compact
         li.innerHTML = `
-            <span class="user-name-link" style="cursor:pointer; text-decoration:underline;">${user}</span>
-            ${deleteBtnHtml}
+            <div style="display:flex; justify-content:space-between; align-items:center; width:100%;">
+                <div style="display:flex; align-items:center; gap:8px; flex:1; min-width:0;">
+                    <span class="user-name-link" style="cursor:pointer; text-decoration:underline; font-size:1.0rem; font-weight:bold; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${user}</span>
+                    <div style="display:flex; align-items:center; flex-shrink:0;">
+                         ${titleIcons ? `<div style="font-size:1.0rem; cursor:help;">${titleIcons}</div>` : ''}
+                    </div>
+                </div>
+                <div style="display:flex; align-items:center; gap:5px; flex-shrink:0;">
+                    <div style="display:flex; align-items:center; gap:10px; font-size:0.75rem; color:#cbd5e1; background:#1e293b; padding:6px 10px; border:1px solid #334155; border-radius:6px;">
+                        <span style="min-width:30px; text-align:right;">${gameCount}戦</span>
+                        <div style="width:1px; height:12px; background:#475569;"></div>
+                        <span style="min-width:45px; text-align:right; color:${scoreColor}; font-weight:bold;">${scoreSign}${totalScore}</span>
+                        <div style="width:1px; height:12px; background:#475569;"></div>
+                        <span style="min-width:55px; text-align:right; color:#94a3b8;">Avg <span style="color:#e2e8f0;">${avgRank}</span></span>
+                    </div>
+                    ${deleteBtnHtml}
+                </div>
+            </div>
         `;
         li.querySelector('.user-name-link').addEventListener('click', () => openUserDetail(user));
         userList.appendChild(li);
     });
 
-    document.querySelectorAll('.btn-danger').forEach(btn => {
+    userList.querySelectorAll('.btn-danger').forEach(btn => {
         btn.addEventListener('click', async (e) => {
             const user = e.target.dataset.user;
             // Double check logic (though UI hidden is first line of defense)
@@ -479,8 +885,129 @@ if (backToUsersBtn) {
     });
 }
 
+// function to open user detail
 async function openUserDetail(userName) {
     userDetailName.textContent = userName;
+
+    // Fetch Sessions & Stats
+    const sessions = await window.AppStorage.getSessions();
+    const stats = getUserStats(userName, sessions);
+
+    // -------------------------------------------------------------------------
+    // RENDER TITLE COLLECTION
+    // -------------------------------------------------------------------------
+    const container = document.getElementById('user-detail');
+
+    // Create or Get Container
+    let collectionContainer = document.getElementById('title-collection-container');
+    if (!collectionContainer) {
+        collectionContainer = document.createElement('div');
+        collectionContainer.id = 'title-collection-container';
+        collectionContainer.style.cssText = 'margin: 0 0 25px 0; background: #1e293b; padding: 15px; border-radius: 8px; border: 1px solid #334155;';
+
+        // Insert AFTER the cumulative score card
+        const scoreCard = document.getElementById('cumulative-score-card');
+        if (scoreCard && scoreCard.parentNode) {
+            if (scoreCard.nextSibling) {
+                scoreCard.parentNode.insertBefore(collectionContainer, scoreCard.nextSibling);
+            } else {
+                scoreCard.parentNode.appendChild(collectionContainer);
+            }
+        } else {
+            // Fallback
+            container.appendChild(collectionContainer);
+        }
+    }
+
+    collectionContainer.innerHTML = '<h3 style="color:#e2e8f0; font-size:1rem; margin:0 0 15px 0; border-bottom:1px solid #334155; padding-bottom:10px;">称号コレクション</h3>';
+
+    const grid = document.createElement('div');
+    grid.style.cssText = 'display: grid; grid-template-columns: repeat(auto-fill, minmax(80px, 1fr)); gap: 10px;';
+
+    // Pre-calculate unlocked status
+    const typeMap = stats ? {
+        'streak_top': stats.maxTop,
+        'streak_rentai': stats.maxRen,
+        'streak_avoid': stats.maxAvoid,
+        'high_score': stats.highScore,
+        'game_count': stats.gameCount,
+        'total_score': stats.totalScore
+        // avg_rank handled by 'check'
+    } : {};
+
+    // Sort titles by category then rank for display
+    const catOrder = ['special', 'game_count', 'total_score', 'streak_top', 'streak_rentai', 'streak_avoid', 'high_score', 'avg_rank'];
+    const rankOrder = ['bronze', 'silver', 'gold', 'special'];
+
+    const sortedTitles = [...TITLES].sort((a, b) => {
+        const catDiff = catOrder.indexOf(a.category) - catOrder.indexOf(b.category);
+        if (catDiff !== 0) return catDiff;
+        return rankOrder.indexOf(a.rank) - rankOrder.indexOf(b.rank);
+    });
+
+    sortedTitles.forEach(title => {
+        // Hide Founder title for anyone else
+        if (title.id === 'founder' && userName !== 'ヒロム') return;
+
+        let isUnlocked = false;
+        if (title.category === 'special') {
+            if (title.check && stats && title.check(stats)) isUnlocked = true;
+        } else {
+            const userVal = typeMap[title.category] || 0;
+            if (userVal >= title.threshold) isUnlocked = true;
+        }
+
+        const card = document.createElement('div');
+
+        // Styling
+        let borderColor = '#334155';
+        let bgColor = 'rgba(30, 41, 59, 0.5)';
+        let opacity = '0.5';
+
+        if (isUnlocked) {
+            opacity = '1';
+            bgColor = 'rgba(51, 65, 85, 0.8)';
+            if (title.rank === 'gold') borderColor = '#ffd700';
+            else if (title.rank === 'silver') borderColor = '#c0c0c0';
+            else if (title.rank === 'bronze') borderColor = '#cd7f32';
+            else if (title.rank === 'special') borderColor = '#a855f7';
+        }
+
+        card.style.cssText = `
+            border: 2px solid ${borderColor};
+            background: ${bgColor};
+            border-radius: 8px;
+            padding: 10px 5px;
+            text-align: center;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 5px;
+            opacity: ${opacity};
+            min-height: 80px;
+        `;
+
+        if (isUnlocked) {
+            card.innerHTML = `
+                <div style="font-size: 1.8rem;">${title.icon}</div>
+                <div style="font-size: 0.7rem; font-weight: bold; color: #fff; line-height:1.2;">${title.name}</div>
+            `;
+            card.title = `${title.name}\n${title.description}\nランク: ${title.rank.toUpperCase()}`;
+        } else {
+            // Masked
+            card.innerHTML = `
+                <div style="font-size: 1.8rem; filter: grayscale(100%);">❓</div>
+                <div style="font-size: 0.7rem; font-weight: bold; color: #64748b;">???</div>
+            `;
+            card.title = "未獲得";
+        }
+
+        grid.appendChild(card);
+    });
+
+    collectionContainer.appendChild(grid);
+
     await renderUserDetail(userName);
     navigateTo('user-detail');
 }
@@ -655,9 +1182,17 @@ async function renderUserDetail(userName) {
     });
 
     let averageRank = 0;
+    let topRate = '-';
+    let rentaiRate = '-';
+    let avoidLastRate = '-';
+
     if (totalGames > 0) {
         const sumRanks = (totalRankCounts[0] * 1) + (totalRankCounts[1] * 2) + (totalRankCounts[2] * 3) + (totalRankCounts[3] * 4);
         averageRank = (sumRanks / totalGames).toFixed(2);
+
+        topRate = ((totalRankCounts[0] / totalGames) * 100).toFixed(1) + '%';
+        rentaiRate = (((totalRankCounts[0] + totalRankCounts[1]) / totalGames) * 100).toFixed(1) + '%';
+        avoidLastRate = (((totalGames - totalRankCounts[3]) / totalGames) * 100).toFixed(1) + '%';
     } else {
         averageRank = '-';
     }
@@ -683,26 +1218,66 @@ async function renderUserDetail(userName) {
     }
 
     if (statsElement) {
+        // Calculate percentages for pie chart legend
+        const rankPcts = totalRankCounts.map(count => totalGames > 0 ? ((count / totalGames) * 100).toFixed(1) + '%' : '0.0%');
+
         statsElement.innerHTML = `
-            <div style="display: flex; justify-content: space-around; width: 100%; max-width: 400px; margin: 0 auto;">
-                <div style="text-align: center;">
-                    <div style="font-size: 0.9rem; margin-bottom: 5px;">1着</div>
-                    <div style="font-size: 1.5rem; font-weight: bold;">${totalRankCounts[0]}</div>
+            <div style="display: flex; align-items: center; justify-content: space-between; width: 100%; max-width: 400px; margin: 0 auto;">
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px 30px; flex: 1;">
+                    <div style="text-align: center;">
+                        <div style="font-size: 0.9rem; margin-bottom: 5px; color: #e2e8f0; display:flex; align-items:center; justify-content:center; gap:5px;">
+                            <div style="width:10px; height:10px; border-radius:50%; background-color:#fcd34d;"></div> 1着
+                        </div>
+                        <div style="font-size: 1.4rem; font-weight: bold;">${totalRankCounts[0]} <span style="font-size:0.8rem; color:#cbd5e1; font-weight:normal;">(${rankPcts[0]})</span></div>
+                    </div>
+                    <div style="text-align: center;">
+                        <div style="font-size: 0.9rem; margin-bottom: 5px; color: #e2e8f0; display:flex; align-items:center; justify-content:center; gap:5px;">
+                            <div style="width:10px; height:10px; border-radius:50%; background-color:#94a3b8;"></div> 2着
+                        </div>
+                        <div style="font-size: 1.4rem; font-weight: bold;">${totalRankCounts[1]} <span style="font-size:0.8rem; color:#cbd5e1; font-weight:normal;">(${rankPcts[1]})</span></div>
+                    </div>
+                    <div style="text-align: center;">
+                        <div style="font-size: 0.9rem; margin-bottom: 5px; color: #e2e8f0; display:flex; align-items:center; justify-content:center; gap:5px;">
+                            <div style="width:10px; height:10px; border-radius:50%; background-color:#475569;"></div> 3着
+                        </div>
+                        <div style="font-size: 1.4rem; font-weight: bold;">${totalRankCounts[2]} <span style="font-size:0.8rem; color:#cbd5e1; font-weight:normal;">(${rankPcts[2]})</span></div>
+                    </div>
+                    <div style="text-align: center;">
+                        <div style="font-size: 0.9rem; margin-bottom: 5px; color: #e2e8f0; display:flex; align-items:center; justify-content:center; gap:5px;">
+                            <div style="width:10px; height:10px; border-radius:50%; background-color:#ef4444;"></div> 4着
+                        </div>
+                        <div style="font-size: 1.4rem; font-weight: bold;">${totalRankCounts[3]} <span style="font-size:0.8rem; color:#cbd5e1; font-weight:normal;">(${rankPcts[3]})</span></div>
+                    </div>
                 </div>
-                <div style="text-align: center;">
-                    <div style="font-size: 0.9rem; margin-bottom: 5px;">2着</div>
-                    <div style="font-size: 1.5rem; font-weight: bold;">${totalRankCounts[1]}</div>
-                </div>
-                <div style="text-align: center;">
-                    <div style="font-size: 0.9rem; margin-bottom: 5px;">3着</div>
-                    <div style="font-size: 1.5rem; font-weight: bold;">${totalRankCounts[2]}</div>
-                </div>
-                <div style="text-align: center;">
-                    <div style="font-size: 0.9rem margin-bottom: 5px;">4着</div>
-                    <div style="font-size: 1.5rem; font-weight: bold;">${totalRankCounts[3]}</div>
+                <div style="width: 100px; height: 100px; margin-left: 20px;">
+                    <canvas id="rank-pie-chart"></canvas>
                 </div>
             </div>
-            <div style="margin-top: 15px; font-size: 1.2rem; display: flex; justify-content: center; align-items: center; gap: 20px;">
+            
+            <div style="display: flex; justify-content: space-around; width: 100%; max-width: 400px; margin: 15px auto 0; padding-top: 15px; border-top: 1px solid rgba(255,255,255,0.1);">
+                <div style="text-align: center;">
+                    <div style="font-size: 0.8rem; margin-bottom: 3px; color: #cbd5e1;">トップ率</div>
+                    <div style="font-size: 1.1rem; font-weight: bold;">${topRate}</div>
+                </div>
+                <div style="text-align: center;">
+                    <div style="font-size: 0.8rem; margin-bottom: 3px; color: #cbd5e1;">連対率</div>
+                    <div style="font-size: 1.1rem; font-weight: bold;">${rentaiRate}</div>
+                </div>
+                <div style="text-align: center;">
+                    <div style="font-size: 0.8rem; margin-bottom: 3px; color: #cbd5e1;">ラス回避率</div>
+                    <div style="font-size: 1.1rem; font-weight: bold;">${avoidLastRate}</div>
+                </div>
+            </div>
+
+            <!-- Graph Container -->
+            <div style="margin: 20px auto 10px; width: 100%; max-width: 400px;">
+                <div style="font-size: 0.9rem; color: rgba(255,255,255,0.7); margin-bottom: 5px;">直近10戦の着順推移</div>
+                <div style="height: 180px; position: relative;">
+                    <canvas id="rank-history-canvas-internal" style="width: 100%; height: 100%;"></canvas>
+                </div>
+            </div>
+
+            <div style="margin-top: 10px; font-size: 1.2rem; display: flex; justify-content: center; align-items: center; gap: 20px;">
                 <div>
                     <span style="color: #e2e8f0; margin-right: 10px;">対戦数:</span>
                     <span style="font-weight: 800; font-size: 1.8rem;">${totalGames}</span>
@@ -713,6 +1288,136 @@ async function renderUserDetail(userName) {
                 </div>
             </div>
         `;
+
+        // Draw Pie Chart
+        // Ensure ChartDataLabels is registered if available
+        if (typeof ChartDataLabels !== 'undefined') {
+            Chart.register(ChartDataLabels);
+        }
+
+        const pieCtx = document.getElementById('rank-pie-chart').getContext('2d');
+        new Chart(pieCtx, {
+            type: 'doughnut',
+            data: {
+                labels: ['1着', '2着', '3着', '4着'],
+                datasets: [{
+                    data: totalRankCounts,
+                    backgroundColor: [
+                        '#fcd34d', // 1st
+                        '#94a3b8', // 2nd
+                        '#475569', // 3rd
+                        '#ef4444'  // 4th
+                    ],
+                    borderColor: 'transparent',
+                    borderWidth: 0
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                cutout: '50%', // Thicker ring
+                plugins: {
+                    legend: { display: false },
+                    tooltip: { enabled: false },
+                    datalabels: {
+                        color: '#fff',
+                        font: {
+                            weight: 'bold',
+                            size: 14
+                        },
+                        formatter: (value, ctx) => {
+                            if (value === 0) return '';
+                            return ctx.chart.data.labels[ctx.dataIndex];
+                        },
+                        display: true
+                    }
+                }
+            }
+        });
+    }
+
+    // Rank History Chart
+    // Note: We need to wait for the DOM to update since we injected HTML above?
+    // Actually, statsElement.innerHTML update is synchronous, so the element exists now.
+    const rankHistoryCanvas = document.getElementById('rank-history-canvas-internal');
+    if (rankHistoryCanvas) {
+        // Prepare Data: Sort by date ASC (oldest to newest) for chart
+        // Filter out games where this user played
+        const allGames = [];
+        chronological.forEach(s => { // chronological is userSessions sorted by date ASC
+            s.games.forEach(g => {
+                const p = g.players.find(x => x.name === userName);
+                if (p && p.rank) {
+                    allGames.push({ rank: p.rank, date: s.date });
+                }
+            });
+        });
+
+        // Take last 10 games
+        const recentGames = allGames.slice(-10);
+        const labels = recentGames.map((_, i) => `${i + 1}`);
+        const dataPoints = recentGames.map(g => g.rank);
+
+        if (rankHistoryCanvas.chartInstance) {
+            rankHistoryCanvas.chartInstance.destroy();
+        }
+
+        const ctx = rankHistoryCanvas.getContext('2d');
+        rankHistoryCanvas.chartInstance = new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: labels,
+                datasets: [{
+                    label: '順位',
+                    data: dataPoints,
+                    borderColor: '#a78bfa',
+                    backgroundColor: 'rgba(167, 139, 250, 0.2)',
+                    borderWidth: 2,
+                    pointBackgroundColor: '#fff',
+                    pointBorderColor: '#8b5cf6',
+                    pointRadius: 6,
+                    pointHoverRadius: 8,
+                    tension: 0.1,
+                    fill: false,
+                    clip: false
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                layout: {
+                    padding: {
+                        top: 20,
+                        bottom: 20,
+                        left: 10,
+                        right: 10
+                    }
+                },
+                scales: {
+                    y: {
+                        min: 1,
+                        max: 4,
+                        reverse: true, // 1st place at top
+                        ticks: {
+                            display: true, // Show labels
+                            stepSize: 1,
+                            color: '#e2e8f0',
+                            font: { size: 12 }
+                        },
+                        grid: {
+                            color: 'rgba(255, 255, 255, 0.1)'
+                        }
+                    },
+                    x: {
+                        display: false // Hide x-axis labels to keep it clean, or show simple index
+                    }
+                },
+                plugins: {
+                    legend: { display: false },
+                    datalabels: { display: false }
+                }
+            }
+        });
     }
 
     userHistoryList.innerHTML = html;
