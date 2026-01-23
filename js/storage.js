@@ -222,6 +222,73 @@ window.AppStorage.removeGameFromSession = async function (sessionId, gameId) {
     return false;
 };
 
+// --- Leagues ---
+
+window.AppStorage.getLeagues = async function () {
+    try {
+        const snapshot = await db.collection("leagues").orderBy("createdAt", "desc").get();
+        const leagues = [];
+        snapshot.forEach((doc) => {
+            leagues.push(doc.data());
+        });
+        return leagues;
+    } catch (e) {
+        console.error("getLeagues failed:", e);
+        return [];
+    }
+};
+
+window.AppStorage.addLeague = async function (leagueData) {
+    try {
+        const id = leagueData.id || String(Date.now());
+        const newLeague = {
+            ...leagueData,
+            id: id,
+            createdAt: new Date(),
+            updatedAt: new Date()
+        };
+        await db.collection("leagues").doc(id).set(newLeague);
+        return newLeague;
+    } catch (e) {
+        console.error("addLeague failed:", e);
+        return null;
+    }
+};
+
+window.AppStorage.updateLeague = async function (leagueId, updates) {
+    try {
+        updates.updatedAt = new Date();
+        await db.collection("leagues").doc(String(leagueId)).update(updates);
+        return true;
+    } catch (e) {
+        console.error("updateLeague failed:", e);
+        return false;
+    }
+};
+
+window.AppStorage.removeLeague = async function (leagueId) {
+    try {
+        await db.collection("leagues").doc(String(leagueId)).delete();
+        return true;
+    } catch (e) {
+        console.error("removeLeague failed:", e);
+        return false;
+    }
+};
+
+window.AppStorage.getLeague = async function (leagueId) {
+    try {
+        const doc = await db.collection("leagues").doc(String(leagueId)).get();
+        if (doc.exists) {
+            return doc.data();
+        }
+        return null;
+    } catch (e) {
+        console.error("getLeague failed:", e);
+        return null;
+    }
+};
+
 // --- Settings ---
 
 const DEFAULT_SETTINGS = {
@@ -385,5 +452,27 @@ window.AppStorage.auth = {
             console.error("Update password failed:", e);
             return { success: false, error: e.code, message: e.message };
         }
+    }
+};
+// --- Delete League ---
+window.AppStorage.deleteLeague = async function (leagueId) {
+    try {
+        // 1. Delete League Doc
+        await db.collection("leagues").doc(leagueId).delete();
+
+        // 2. Unlink Sessions
+        const sessionsSnapshot = await db.collection("sessions").where("leagueId", "==", leagueId).get();
+        const batch = db.batch();
+
+        sessionsSnapshot.forEach((doc) => {
+            const ref = db.collection("sessions").doc(doc.id);
+            batch.update(ref, { leagueId: null }); // Or firebase.firestore.FieldValue.delete()
+        });
+
+        await batch.commit();
+        return true;
+    } catch (e) {
+        console.error("deleteLeague failed:", e);
+        return false;
     }
 };

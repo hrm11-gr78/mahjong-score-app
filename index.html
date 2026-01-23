@@ -18,16 +18,20 @@
             <button id="header-profile-btn"
                 style="display: none; position: absolute; left: 0; background: none; border: none; font-size: 1.5rem; cursor: pointer; color: var(--text-primary);"
                 title="ユーザー設定">👤</button>
-            <h1>🀄 雀ログ</h1>
+            <h1 id="app-title" style="cursor: pointer;">🀄 雀ログ</h1>
+            <!-- Added League Button next to Settings -->
+            <button id="header-league-btn"
+                style="display: none; position: absolute; right: 45px; background: none; border: none; font-size: 1.5rem; cursor: pointer;"
+                title="リーグ戦">🏆</button>
             <button id="header-settings-btn"
                 style="display: none; position: absolute; right: 0; background: none; border: none; font-size: 1.5rem; cursor: pointer;">⚙️</button>
         </header>
 
         <nav style="display: none;">
-            <button data-target="home" class="active">ホーム</button>
+            <button data-target="home" class="active">セット</button>
             <button data-target="users">ユーザー</button>
             <button data-target="roulette">ルーレット</button>
-            <!-- <button data-target="settings">設定</button> Removed as per user request -->
+            <!-- League moved to header -->
         </nav>
 
         <main>
@@ -104,6 +108,16 @@
                     </select>
                 </div>
                 <button id="link-user-btn" class="btn-primary">保存して開始</button>
+            </section>
+
+            <!-- SETTINGS SECTION -->
+            <section id="settings-section" class="content-section" style="display: none;">
+                <!-- Settings content will be rendered here -->
+            </section>
+
+            <!-- LEAGUE SECTION -->
+            <section id="league-section" class="content-section" style="display: none;">
+                <!-- League content rendered by js/league.js -->
             </section>
 
             <!-- HOME / SESSION SETUP SECTION -->
@@ -517,6 +531,10 @@
         </div>
     </div>
 
+
+
+
+
     <!-- Firebase Compat (Global) -->
     <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
@@ -526,6 +544,7 @@
     <script src="js/mahjong.js"></script>
     <script src="js/storage.js"></script>
     <script src="js/settlement.js"></script>
+    <script src="js/league.js"></script>
     <script src="js/app.js"></script>
     <script>
         if ('serviceWorker' in navigator) {

@@ -73,17 +73,24 @@ nav {
 nav button {
     background: none;
     border: none;
-    color: var(--text-secondary);
+    color: #94a3b8;
+    /* Lighter grey */
     font-size: 1rem;
     padding: var(--spacing-sm) var(--spacing-md);
     cursor: pointer;
-    transition: color 0.2s;
+    transition: all 0.2s;
+}
+
+nav button:hover {
+    color: #e2e8f0;
 }
 
 nav button.active {
-    color: var(--primary-color);
+    color: #c084fc;
+    /* Bright purple */
     font-weight: bold;
-    border-bottom: 2px solid var(--primary-color);
+    border-bottom: 2px solid #c084fc;
+    text-shadow: 0 0 5px rgba(192, 132, 252, 0.3);
 }
 
 /* Sections */
@@ -493,6 +500,26 @@ input[type=number] {
     transform: translateY(-50%) rotate(45deg);
 }
 
+/* Header League Button */
+#header-league-btn {
+    position: absolute;
+    top: 50%;
+    right: 50px;
+    /* Positioned left of settings */
+    transform: translateY(-50%);
+    background: none;
+    border: none;
+    font-size: 1.5rem;
+    cursor: pointer;
+    padding: 10px;
+    z-index: 200;
+    transition: transform 0.2s;
+}
+
+#header-league-btn:hover {
+    transform: translateY(-50%) scale(1.1);
+}
+
 /* Player Select Wrapper */
 .player-select-wrapper {
     display: flex;
@@ -594,9 +621,10 @@ section.active {
         align-items: flex-end;
         gap: 2px;
         padding: 4px 6px;
-        min-width: 70px; /* Minimal width to keep it neat */
+        min-width: 70px;
+        /* Minimal width to keep it neat */
     }
-    
+
     .stat-separator {
         display: none;
     }
@@ -607,9 +635,9 @@ section.active {
         width: 100%;
         line-height: 1.2;
     }
-    
+
     /* Slightly smaller font on very small screens if needed */
     .user-stats-box {
-        font-size: 0.7rem; 
+        font-size: 0.7rem;
     }
 }

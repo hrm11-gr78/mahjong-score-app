@@ -377,15 +377,27 @@ function navigateTo(targetId) {
         }
     });
 
-    // Toggle Header Settings Button Visibility
+    // Toggle Header Settings & League Button Visibility
     const settingsBtn = document.getElementById('header-settings-btn');
+    const leagueBtn = document.getElementById('header-league-btn');
+
+    // Show on main tabs (Home, Users, Roulette)
+    // Note: League section itself is a "main" view but handled via header now.
+    const mainTabs = ['home', 'users', 'roulette', 'league-section'];
+
     if (settingsBtn) {
-        // Show on main tabs (Home, Users, Roulette)
-        const mainTabs = ['home', 'users', 'roulette'];
         if (mainTabs.includes(targetId)) {
             settingsBtn.style.display = 'block';
         } else {
             settingsBtn.style.display = 'none';
+        }
+    }
+
+    if (leagueBtn) {
+        if (mainTabs.includes(targetId)) {
+            leagueBtn.style.display = 'block';
+        } else {
+            leagueBtn.style.display = 'none';
         }
     }
 
@@ -590,6 +602,17 @@ async function renderUserOptions() {
             deviceUserSelect.value = savedDeviceUser;
         }
     }
+}
+
+// Header League Button Listener
+const headerLeagueBtn = document.getElementById('header-league-btn');
+if (headerLeagueBtn) {
+    headerLeagueBtn.addEventListener('click', () => {
+        navigateTo('league-section');
+        if (window.League) {
+            window.League.renderList(document.getElementById('league-section'));
+        }
+    });
 }
 
 function setupSessionFormToggles() {
@@ -870,7 +893,7 @@ async function renderUserList() {
                          ${titleIcons ? `<div style="font-size:1.0rem;">${titleIcons}</div>` : ''}
                     </div>
                 </div>
-                <div style="display:flex; align-items:center; gap:5px; flex-shrink:0;">
+                <div style="display:flex; align-items:center; gap:10px; flex-shrink:0;">
                     <div class="user-stats-box">
                         <span class="stat-item user-game-count">${gameCount}戦</span>
                         <div class="stat-separator"></div>
@@ -1566,6 +1589,28 @@ if (sessionSetupForm) {
         };
 
         const session = await window.AppStorage.createSession(getDate, players, rules);
+
+        // Auto-link to League
+        try {
+            if (window.AppStorage.getLeagues) {
+                const leagues = await window.AppStorage.getLeagues();
+                const activeLeague = leagues.find(l =>
+                    l.status === 'active' &&
+                    l.players.length >= 4 &&
+                    players.every(p => l.players.includes(p))
+                );
+
+                if (activeLeague) {
+                    await window.AppStorage.updateSession(session.id, { leagueId: activeLeague.id });
+                    if (typeof showToast === 'function') {
+                        showToast(`リーグ「${activeLeague.title}」の対局として記録しました。`);
+                    }
+                }
+            }
+        } catch (e) {
+            console.error("League link error:", e);
+        }
+
         await openSession(session.id);
     });
 }
@@ -3106,6 +3151,12 @@ if (spinBtn) {
     });
 }
 
+
+// App Title Click
+document.getElementById('app-title')?.addEventListener('click', () => {
+    const homeBtn = document.querySelector('nav button[data-target="home"]');
+    if (homeBtn) homeBtn.click();
+});
 
 // Start at bottom of script
 // Replace the window load event listener with immediate execution for navigation
