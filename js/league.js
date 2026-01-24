@@ -689,6 +689,7 @@ window.League = {
                     legend: {
                         labels: { color: '#cbd5e1' }
                     },
+                    datalabels: { display: false },
                     tooltip: {
                         mode: 'index',
                         intersect: false
