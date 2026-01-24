@@ -72,6 +72,7 @@ const rouletteList = document.getElementById('roulette-list');
 let currentSessionId = null;
 let editingGameId = null; // ID of the game being edited
 let pendingGameData = null; // Store data while waiting for tie-breaker
+let pendingGameYakumans = []; // [NEW] Store yakumans for current game input
 
 // Roulette State
 let rouletteItems = [];
@@ -96,6 +97,7 @@ async function init() {
     }
 
     setupScoreValidation();
+    setupYakumanModal(); // [NEW] Initialize Modal Listeners
 
     // 2. Initialize Auth & State
     window.AppStorage.auth.init(handleAuthStateChanged);
@@ -373,20 +375,28 @@ function navigateTo(targetId) {
         if (s.id === targetId) {
             s.classList.add('active');
             s.style.display = 'block';
+            s.classList.add('active');
+            s.style.display = 'block';
             console.log("Navigated to:", targetId); // Debug log
+
+            // [NEW] Render Gallery
+            if (targetId === 'gallery' && window.renderGallery) {
+                window.renderGallery();
+            }
         }
     });
 
     // Toggle Header Settings & League Button Visibility
     const settingsBtn = document.getElementById('header-settings-btn');
     const leagueBtn = document.getElementById('header-league-btn');
+    const galleryBtn = document.getElementById('header-gallery-btn');
 
     // Show on main tabs (Home, Users, Roulette)
     // Note: League section itself is a "main" view but handled via header now.
-    const mainTabs = ['home', 'users', 'roulette', 'league-section', 'session-detail', 'input', 'user-detail', 'settings'];
+    const mainTabs = ['home', 'users', 'roulette', 'league-section', 'session-detail', 'input', 'user-detail', 'settings', 'gallery'];
 
     if (settingsBtn) {
-        if (mainTabs.includes(targetId)) {
+        if (mainTabs.includes(targetId) && targetId !== 'gallery') {
             settingsBtn.style.display = 'block';
         } else {
             settingsBtn.style.display = 'none';
@@ -394,10 +404,18 @@ function navigateTo(targetId) {
     }
 
     if (leagueBtn) {
-        if (mainTabs.includes(targetId)) {
+        if (mainTabs.includes(targetId) && targetId !== 'gallery') {
             leagueBtn.style.display = 'block';
         } else {
             leagueBtn.style.display = 'none';
+        }
+    }
+
+    if (galleryBtn) {
+        if (mainTabs.includes(targetId) && targetId !== 'gallery') {
+            galleryBtn.style.display = 'block';
+        } else {
+            galleryBtn.style.display = 'none';
         }
     }
 
@@ -615,6 +633,14 @@ if (headerLeagueBtn) {
     });
 }
 
+// Header Gallery Button Listener
+const headerGalleryBtn = document.getElementById('header-gallery-btn');
+if (headerGalleryBtn) {
+    headerGalleryBtn.addEventListener('click', () => {
+        navigateTo('gallery');
+    });
+}
+
 function setupSessionFormToggles() {
     document.querySelectorAll('.toggle-guest-btn').forEach(btn => {
         // Remove old listener (simple way is to clone, but we use robust "listenerAttached" check now globaly if needed)
@@ -693,12 +719,19 @@ const TITLES = [
 
     // Average Rank (Lower is better, handled by check or inverted threshold logic in app)
     // Using 'check' logic for flexibility
-    { id: 'avg_240', name: 'アベレージヒッター', icon: '🎯', category: 'avg_rank', rank: 'bronze', check: (stats) => stats.gameCount >= 30 && stats.avgRank <= 2.40, description: '平均順位2.40以下 (30戦以上)' },
-    { id: 'avg_225', name: '卓上の支配者', icon: '🎩', category: 'avg_rank', rank: 'silver', check: (stats) => stats.gameCount >= 30 && stats.avgRank <= 2.25, description: '平均順位2.25以下 (30戦以上)' },
-    { id: 'avg_210', name: '覇王', icon: '🔱', category: 'avg_rank', rank: 'gold', check: (stats) => stats.gameCount >= 30 && stats.avgRank <= 2.10, description: '平均順位2.10以下 (30戦以上)' },
+    { id: 'avg_240', name: 'アベレージヒッター', icon: '🎯', category: 'avg_rank', rank: 'bronze', check: (stats) => stats.minAverageRank > 0 && stats.minAverageRank <= 2.40, description: '平均順位2.40以下 (30戦以上)' },
+    { id: 'avg_225', name: '卓上の支配者', icon: '🎩', category: 'avg_rank', rank: 'silver', check: (stats) => stats.minAverageRank > 0 && stats.minAverageRank <= 2.25, description: '平均順位2.25以下 (30戦以上)' },
+    { id: 'avg_210', name: '覇王', icon: '🔱', category: 'avg_rank', rank: 'gold', check: (stats) => stats.minAverageRank > 0 && stats.minAverageRank <= 2.10, description: '平均順位2.10以下 (30戦以上)' },
+
+    // Yakuman系称号
+    { id: 'yakuman_beginner', name: '役満経験者', icon: '🌸', category: 'yakuman', rank: 'bronze', check: (stats) => (stats.recordYakumanCount || stats.yakumanCount) >= 1, description: '役満1回以上達成' },
+    { id: 'yakuman_master', name: '役満マスター', icon: '🏵️', category: 'yakuman', rank: 'silver', check: (stats) => (stats.recordYakumanCount || stats.yakumanCount) >= 5, description: '役満5回以上達成' },
+    { id: 'yakuman_god', name: '役満神', icon: '✨', category: 'yakuman', rank: 'gold', check: (stats) => (stats.recordYakumanCount || stats.yakumanCount) >= 10, description: '役満10回以上達成' },
+    { id: 'tenhou_holder', name: '天運の持ち主', icon: '☀️', category: 'yakuman', rank: 'special', check: (stats) => (stats.recordHasTenhou || stats.hasTenhou) === true, description: '天和達成' },
+    { id: 'chiihou_holder', name: '地運の持ち主', icon: '🌏', category: 'yakuman', rank: 'special', check: (stats) => (stats.recordHasChiihou || stats.hasChiihou) === true, description: '地和達成' },
 ];
 
-function getUserStats(userName, allSessions) {
+async function getUserStats(userName, allSessions) {
     if (!allSessions || allSessions.length === 0) return null;
 
     const userGames = [];
@@ -707,12 +740,35 @@ function getUserStats(userName, allSessions) {
             const p = g.players.find(x => x.name === userName);
             if (p) {
                 // We need finalScore for total score calculation and to know rank
-                userGames.push({ rank: p.rank, score: p.score, finalScore: p.finalScore, date: s.date });
+                userGames.push({ rank: p.rank, score: p.score, finalScore: p.finalScore, date: s.date, yakuman: p.yakuman || [] });
             }
         });
     });
 
-    if (userGames.length === 0) return { userName, maxTop: 0, maxRen: 0, maxAvoid: 0, highScore: -Infinity, gameCount: 0, totalScore: 0, avgRank: 0 };
+    if (userGames.length === 0) {
+        // Firestoreから最高記録を取得
+        const titleRecords = await window.AppStorage.getUserTitleRecords(userName);
+        if (titleRecords) {
+            return {
+                userName,
+                maxTop: titleRecords.maxConsecutiveTop || 0,
+                maxRen: titleRecords.maxConsecutiveRentai || 0,
+                maxAvoid: titleRecords.maxConsecutiveAvoidLast || 0,
+                highScore: titleRecords.maxHighScore || 0,
+                gameCount: titleRecords.maxGameCount || 0,
+                totalScore: 0,
+                avgRank: 0,
+                yakumanCount: 0,
+                hasTenhou: false,
+                hasChiihou: false,
+
+                // Keep records for titles
+                maxCumulativeScore: titleRecords.maxCumulativeScore || 0,
+                minAverageRank: titleRecords.minAverageRank || 0,
+            };
+        }
+        return { userName, maxTop: 0, maxRen: 0, maxAvoid: 0, highScore: 0, gameCount: 0, totalScore: 0, avgRank: 0, yakumanCount: 0, hasTenhou: false, hasChiihou: false };
+    }
 
     let currentTop = 0; let maxTop = 0;
     let currentRen = 0; let maxRen = 0;
@@ -720,6 +776,11 @@ function getUserStats(userName, allSessions) {
     let highScore = -Infinity;
     let totalScore = 0;
     let totalRank = 0;
+
+    // 役満カウント
+    let yakumanCount = 0;
+    let hasTenhou = false;
+    let hasChiihou = false;
 
     // Sorting by date is crucial for streak calculation
     userGames.sort((a, b) => new Date(a.date) - new Date(b.date));
@@ -738,17 +799,54 @@ function getUserStats(userName, allSessions) {
 
         totalScore += (g.finalScore || 0);
         totalRank += g.rank;
+
+        // 役満の集計
+        if (g.yakuman && Array.isArray(g.yakuman)) {
+            yakumanCount += g.yakuman.length;
+            g.yakuman.forEach(y => {
+                if (y.type === '天和') hasTenhou = true;
+                if (y.type === '地和') hasChiihou = true;
+            });
+        }
     });
 
     const gameCount = userGames.length;
     const avgRank = gameCount > 0 ? parseFloat((totalRank / gameCount).toFixed(2)) : 0;
     totalScore = parseFloat(totalScore.toFixed(1));
 
-    return { userName, maxTop, maxRen, maxAvoid, highScore, gameCount, totalScore, avgRank };
+    // Firestoreから最高記録を取得してマージ
+    const titleRecords = await window.AppStorage.getUserTitleRecords(userName);
+
+    // 称号判定には最高記録を使用
+    return {
+        userName,
+        // 現在の統計値（画面表示用）
+        maxTop,
+        maxRen,
+        maxAvoid,
+        highScore,
+        gameCount,
+        totalScore,
+        avgRank,
+        yakumanCount,
+        hasTenhou,
+        hasChiihou,
+        // 最高記録（称号判定用）
+        maxCumulativeScore: titleRecords ? titleRecords.maxCumulativeScore : totalScore,
+        minAverageRank: titleRecords ? titleRecords.minAverageRank : (gameCount >= 30 ? avgRank : 0),
+        maxConsecutiveTop: titleRecords ? titleRecords.maxConsecutiveTop : maxTop,
+        maxConsecutiveRentai: titleRecords ? titleRecords.maxConsecutiveRentai : maxRen,
+        maxConsecutiveAvoidLast: titleRecords ? titleRecords.maxConsecutiveAvoidLast : maxAvoid,
+        maxHighScore: titleRecords ? titleRecords.maxHighScore : highScore,
+        maxGameCount: titleRecords ? titleRecords.maxGameCount : gameCount,
+        recordYakumanCount: titleRecords ? titleRecords.yakumanCount : yakumanCount,
+        recordHasTenhou: titleRecords ? titleRecords.hasTenhou : hasTenhou,
+        recordHasChiihou: titleRecords ? titleRecords.hasChiihou : hasChiihou
+    };
 }
 
-function calculateUserTitles(userName, allSessions) {
-    const stats = getUserStats(userName, allSessions);
+async function calculateUserTitles(userName, allSessions) {
+    const stats = await getUserStats(userName, allSessions);
     if (!stats) return TITLES.filter(t => t.check && t.check({ userName })); // Fallback
 
     const earnedTitles = [];
@@ -764,12 +862,12 @@ function calculateUserTitles(userName, allSessions) {
     // Let's stick to the main ones for the small icon list.
     const categories = ['streak_top', 'streak_rentai', 'streak_avoid', 'high_score', 'game_count', 'total_score'];
     const typeMap = {
-        'streak_top': stats.maxTop,
-        'streak_rentai': stats.maxRen,
-        'streak_avoid': stats.maxAvoid,
-        'high_score': stats.highScore,
-        'game_count': stats.gameCount,
-        'total_score': stats.totalScore
+        'streak_top': stats.maxConsecutiveTop || stats.maxTop,
+        'streak_rentai': stats.maxConsecutiveRentai || stats.maxRen,
+        'streak_avoid': stats.maxConsecutiveAvoidLast || stats.maxAvoid,
+        'high_score': stats.maxHighScore || stats.highScore,
+        'game_count': stats.maxGameCount || stats.gameCount,
+        'total_score': stats.maxCumulativeScore || stats.totalScore
     };
 
     categories.forEach(cat => {
@@ -859,15 +957,15 @@ async function renderUserList() {
 
     userList.innerHTML = '';
 
-    users.forEach(user => {
+    const listItems = await Promise.all(users.map(async user => {
         // Calculate Stats using helper
-        const stats = getUserStats(user, sessions);
+        const stats = await getUserStats(user, sessions);
         const gameCount = stats ? stats.gameCount : 0;
         const totalScore = stats ? stats.totalScore : 0;
         const avgRank = stats && stats.avgRank > 0 ? stats.avgRank.toFixed(2) : '-';
 
         // Calculate Titles
-        const myTitles = calculateUserTitles(user, sessions);
+        const myTitles = await calculateUserTitles(user, sessions);
         const titleIcons = myTitles.map(t =>
             `<span class="title-icon" data-name="${t.name}" data-desc="${t.description}" style="margin-right:2px; cursor:pointer;" title="${t.name}\n${t.description}">${t.icon}</span>`
         ).join('');
@@ -922,17 +1020,26 @@ async function renderUserList() {
             });
         });
 
-        userList.appendChild(li);
-    });
+        return li;
+    }));
+
+    listItems.forEach(li => userList.appendChild(li));
 
     userList.querySelectorAll('.btn-danger').forEach(btn => {
         btn.addEventListener('click', async (e) => {
-            const user = e.target.dataset.user;
+            const button = e.currentTarget;
+            const user = button.dataset.user;
+
             // Double check logic (though UI hidden is first line of defense)
             const currentDeviceUser = localStorage.getItem('deviceUser');
-            // Admin "ヒロム" can delete anyone
-            if (currentDeviceUser && currentDeviceUser !== user && currentDeviceUser !== 'ヒロム') {
-                alert("他のユーザーを削除する権限がありません。\n設定画面で「この端末のユーザー」を確認してください。");
+
+            // Permission check:
+            // 1. Must be logged in
+            // 2. Can delete ONLY if Admin ('ヒロム')
+            const isMegaAdmin = currentDeviceUser === 'ヒロム';
+
+            if (!currentDeviceUser || !isMegaAdmin) {
+                alert("ユーザーを削除する権限がありません。\n管理者（ヒロム）のみが削除可能です。");
                 return;
             }
 
@@ -968,7 +1075,7 @@ async function openUserDetail(userName) {
 
     // Fetch Sessions & Stats
     const sessions = await window.AppStorage.getSessions();
-    const stats = getUserStats(userName, sessions);
+    const stats = await getUserStats(userName, sessions);
 
     // -------------------------------------------------------------------------
     // RENDER TITLE COLLECTION
@@ -1003,17 +1110,17 @@ async function openUserDetail(userName) {
 
     // Pre-calculate unlocked status
     const typeMap = stats ? {
-        'streak_top': stats.maxTop,
-        'streak_rentai': stats.maxRen,
-        'streak_avoid': stats.maxAvoid,
-        'high_score': stats.highScore,
-        'game_count': stats.gameCount,
-        'total_score': stats.totalScore
+        'streak_top': stats.maxConsecutiveTop || stats.maxTop,
+        'streak_rentai': stats.maxConsecutiveRentai || stats.maxRen,
+        'streak_avoid': stats.maxConsecutiveAvoidLast || stats.maxAvoid,
+        'high_score': stats.maxHighScore || stats.highScore,
+        'game_count': stats.maxGameCount || stats.gameCount,
+        'total_score': stats.maxCumulativeScore || stats.totalScore
         // avg_rank handled by 'check'
     } : {};
 
     // Sort titles by category then rank for display
-    const catOrder = ['special', 'game_count', 'total_score', 'streak_top', 'streak_rentai', 'streak_avoid', 'high_score', 'avg_rank'];
+    const catOrder = ['special', 'yakuman', 'game_count', 'total_score', 'streak_top', 'streak_rentai', 'streak_avoid', 'high_score', 'avg_rank'];
     const rankOrder = ['bronze', 'silver', 'gold', 'special'];
 
     const sortedTitles = [...TITLES].sort((a, b) => {
@@ -1027,9 +1134,12 @@ async function openUserDetail(userName) {
         if (title.id === 'founder' && userName !== 'ヒロム') return;
 
         let isUnlocked = false;
-        if (title.category === 'special') {
-            if (title.check && stats && title.check(stats)) isUnlocked = true;
-        } else {
+        // Check-based titles (special, yakuman, avg_rank, etc.)
+        if (title.check) {
+            if (stats && title.check(stats)) isUnlocked = true;
+        }
+        // Threshold-based titles
+        else if (title.threshold !== undefined) {
             const userVal = typeMap[title.category] || 0;
             if (userVal >= title.threshold) isUnlocked = true;
         }
@@ -1109,8 +1219,11 @@ window.openUserDetail = openUserDetail;
 
 async function renderUserDetail(userName) {
     const sessions = await window.AppStorage.getSessions();
-    // Filter sessions where user participated
-    const userSessions = sessions.filter(s => s.players.includes(userName));
+    // Filter sessions where user participated (either in session list OR in any game)
+    const userSessions = sessions.filter(s =>
+        (s.players && s.players.includes(userName)) ||
+        (s.games && s.games.some(g => g.players.some(p => p.name === userName)))
+    );
 
     // Sort by date (newest first for display)
     userSessions.sort((a, b) => new Date(b.date) - new Date(a.date));
@@ -1694,8 +1807,9 @@ async function renderSessionList() {
         const isLocked = session.locked === true;
         const lockIcon = isLocked ? '🔒' : '🔓';
 
-        // Show delete button ONLY if admin AND NOT LOCKED
-        const showDelete = localStorage.getItem('deviceUser') === 'ヒロム' && !isLocked;
+        // Show delete button if admin OR participant, AND NOT LOCKED
+        const isParticipant = Array.isArray(session.players) && session.players.includes(deviceUser);
+        const showDelete = (deviceUser === 'ヒロム' || isParticipant) && !isLocked;
 
         div.innerHTML = `
             <div style="display:flex; justify-content:space-between; align-items:center;">
@@ -2085,10 +2199,11 @@ function renderGameList(session) {
         });
 
         // Edit/Delete Buttons logic
-        // Only show if Admin AND Session is NOT locked
-        const isAdmin = localStorage.getItem('deviceUser') === 'ヒロム';
+        // Only show if Admin OR Participant, AND Session is NOT locked
+        const deviceUser = localStorage.getItem('deviceUser');
+        const isParticipant = Array.isArray(session.players) && session.players.includes(deviceUser);
         const isLocked = !!session.locked;
-        const showControls = isAdmin && !isLocked;
+        const showControls = (deviceUser === 'ヒロム' || isParticipant) && !isLocked;
 
         card.innerHTML = `
             <div class="history-header">
@@ -2194,6 +2309,7 @@ function setInputMode(isDirect) {
 async function prepareInputForm(gameToEdit = null) {
     // Reset form immediately
     scoreForm.reset();
+    pendingGameYakumans = []; // [NEW] Reset yakumans
 
     // Default to Points Mode unless editing a game that looks like direct input?
     // Hard to tell difference strictly, but usually we start with Points.
@@ -2498,6 +2614,16 @@ scoreForm.addEventListener('submit', async (e) => {
             finalScore: r.finalScore,
             wind: playerWinds[i] // Ensure wind is attached
         }));
+    }
+
+    // [NEW] Attach Yakuman Data
+    if (pendingGameYakumans.length > 0) {
+        playersResult.forEach(p => {
+            const yList = pendingGameYakumans.filter(y => y.playerName === p.name);
+            if (yList.length > 0) {
+                p.yakuman = yList;
+            }
+        });
     }
 
     // Save
@@ -3301,3 +3427,300 @@ if (document.readyState === 'loading') {
     safeInit();
 }
 
+
+// --- Yakuman Gallery & Modal Logic ---
+
+function setupYakumanModal() {
+    const modal = document.getElementById('yakuman-modal');
+    const openBtn = document.getElementById('open-yakuman-modal-btn');
+    const closeBtn = document.getElementById('close-yakuman-modal');
+    const saveBtn = document.getElementById('save-yakuman-btn');
+
+    // Inputs
+    const playerSelect = document.getElementById('yakuman-player-select');
+    const typeInput = document.getElementById('yakuman-type-input');
+    const imageInput = document.getElementById('yakuman-image-input');
+    const commentInput = document.getElementById('yakuman-comment-input');
+    const imagePreview = document.getElementById('yakuman-image-preview');
+
+    if (!modal || !openBtn) return;
+
+    // OPEN
+    openBtn.addEventListener('click', async () => {
+        // Populate players from current session
+        const session = await window.AppStorage.getSession(currentSessionId);
+        if (!session) {
+            alert('対局情報が見つかりません');
+            return;
+        }
+
+        playerSelect.innerHTML = '';
+        session.players.forEach(p => {
+            const op = document.createElement('option');
+            op.value = p;
+            op.textContent = p;
+            playerSelect.appendChild(op);
+        });
+
+        // Reset inputs
+        typeInput.value = '';
+        imageInput.value = '';
+        commentInput.value = '';
+        imagePreview.style.display = 'none';
+        imagePreview.querySelector('img').src = '';
+
+        // Reset upload state
+        uploadPromise = null;
+        if (saveBtn) {
+            saveBtn.disabled = false;
+            saveBtn.textContent = '登録する';
+        }
+
+        modal.style.display = 'flex';
+    });
+
+    // CLOSE
+    if (closeBtn) {
+        closeBtn.addEventListener('click', () => {
+            modal.style.display = 'none';
+        });
+    }
+
+    // IMAGE PREVIEW & UPLOAD OPTIMIZATION
+    let uploadPromise = null; // Store pending upload
+
+    if (imageInput) {
+        imageInput.addEventListener('change', (e) => {
+            const file = e.target.files[0];
+            if (file) {
+                // 1. Preview
+                const reader = new FileReader();
+                reader.onload = (ev) => {
+                    imagePreview.querySelector('img').src = ev.target.result;
+                    imagePreview.style.display = 'block';
+                };
+                reader.readAsDataURL(file);
+
+                // 2. Start Background Upload
+                const progressContainer = document.getElementById('yakuman-upload-progress-container');
+                const progressBar = document.getElementById('yakuman-upload-progress-bar');
+
+                if (progressContainer && progressBar) {
+                    progressContainer.style.display = 'block';
+                    progressBar.style.width = '0%';
+                }
+
+                saveBtn.textContent = '画像アップロード中...';
+                saveBtn.disabled = true; // Block save until upload completes as requested
+
+                // Create promise
+                uploadPromise = (async () => {
+                    try {
+                        const compressedBlob = await resizeAndCompressImage(file, 800, 0.6);
+                        const timestamp = Date.now();
+                        const path = `yakuman/${timestamp}_${Math.random().toString(36).substr(2, 9)}.jpg`;
+
+                        const url = await window.AppStorage.uploadImage(compressedBlob, path, (progress) => {
+                            if (progressBar) progressBar.style.width = `${progress}%`;
+                        });
+
+                        return { url, path };
+                    } catch (err) {
+                        console.error("BG Upload failed", err);
+                        throw err;
+                    }
+                })();
+
+                // On completion or failure
+                uploadPromise.then(() => {
+                    saveBtn.textContent = '登録する';
+                    saveBtn.disabled = false;
+                    if (progressBar) progressBar.style.width = '100%';
+                }).catch((err) => {
+                    console.error("Upload Promise Failed:", err);
+                    alert(`アップロードに失敗しました。\n詳細: ${err.message || err.code || '不明なエラー'}`);
+
+                    saveBtn.textContent = 'アップロード失敗 (再選択してください)';
+                    saveBtn.disabled = true; // Still disabled if failed
+                    uploadPromise = null;
+                    if (progressContainer) progressContainer.style.display = 'none';
+                });
+            } else {
+                uploadPromise = null;
+                saveBtn.textContent = '登録する';
+                saveBtn.disabled = false;
+                const progressContainer = document.getElementById('yakuman-upload-progress-container');
+                if (progressContainer) progressContainer.style.display = 'none';
+            }
+        });
+    }
+
+    // SAVE
+    if (saveBtn) {
+        saveBtn.addEventListener('click', async () => {
+            const player = playerSelect.value;
+            const type = typeInput.value.trim();
+            const comment = commentInput.value.trim();
+            // const file = imageInput.files[0]; // Logic moved to promise
+
+            if (!type) {
+                alert('役満の種類を入力してください');
+                return;
+            }
+
+            saveBtn.disabled = true;
+            saveBtn.textContent = '保存中...';
+
+            let imageUrl = null;
+            let imagePath = null;
+
+            // Wait for existing upload
+            if (uploadPromise) {
+                try {
+                    const result = await uploadPromise;
+                    if (result) {
+                        imageUrl = result.url;
+                        imagePath = result.path;
+                    }
+                } catch (e) {
+                    alert('画像のアップロードに失敗しました。もう一度選択し直してください。');
+                    saveBtn.disabled = false;
+                    saveBtn.textContent = '登録する';
+                    return;
+                }
+            }
+
+            // Create Object
+            const yakumanData = {
+                id: Date.now(),
+                playerName: player,
+                type: type,
+                comment: comment,
+                imageUrl: imageUrl, // Can be null
+                imagePath: imagePath, // For delete
+                timestamp: Date.now()
+            };
+
+            // Add to Pending
+            pendingGameYakumans.push(yakumanData);
+
+            alert('役満を一時保存しました。\nこの対局の結果を保存する際に一緒に記録されます。');
+
+            modal.style.display = 'none';
+            saveBtn.disabled = false;
+            saveBtn.textContent = '登録する';
+        });
+    }
+}
+
+// Image Utility
+function resizeAndCompressImage(file, maxSide, quality) {
+    return new Promise((resolve, reject) => {
+        // Timeout after 10 seconds
+        const timeoutId = setTimeout(() => {
+            reject(new Error("Image processing timed out"));
+        }, 10000);
+
+        const url = URL.createObjectURL(file);
+        const img = new Image();
+        img.src = url;
+        img.onload = () => {
+            clearTimeout(timeoutId);
+            URL.revokeObjectURL(url); // Cleanup
+            const canvas = document.createElement('canvas');
+            let width = img.width;
+            let height = img.height;
+
+            if (width > height) {
+                if (width > maxSide) {
+                    height *= maxSide / width;
+                    width = maxSide;
+                }
+            } else {
+                if (height > maxSide) {
+                    width *= maxSide / height;
+                    height = maxSide;
+                }
+            }
+
+            canvas.width = width;
+            canvas.height = height;
+            const ctx = canvas.getContext('2d');
+            ctx.drawImage(img, 0, 0, width, height);
+
+            canvas.toBlob((blob) => {
+                if (blob) resolve(blob);
+                else reject(new Error('Canvas to Blob failed'));
+            }, 'image/jpeg', quality);
+        };
+        img.onerror = (err) => {
+            clearTimeout(timeoutId);
+            URL.revokeObjectURL(url);
+            reject(err);
+        };
+    });
+}
+
+// Render Gallery
+window.renderGallery = async function () {
+    const list = document.getElementById('gallery-list');
+    if (!list) return;
+
+    list.innerHTML = '<div style="text-align:center; grid-column: 1/-1;">読み込み中...</div>';
+
+    try {
+        const sessions = await window.AppStorage.getSessions();
+        const allYakumans = [];
+
+        sessions.forEach(s => {
+            s.games.forEach(g => {
+                g.players.forEach(p => {
+                    if (p.yakuman && Array.isArray(p.yakuman)) {
+                        p.yakuman.forEach(y => {
+                            // Enrich data if needed
+                            if (!y.timestamp) y.timestamp = s.date; // Fallback
+                            allYakumans.push(y);
+                        });
+                    }
+                });
+            });
+        });
+
+        // Sort desc
+        allYakumans.sort((a, b) => b.timestamp - a.timestamp);
+
+        list.innerHTML = '';
+        if (allYakumans.length === 0) {
+            list.innerHTML = '<div style="text-align:center; grid-column: 1/-1; color: #94a3b8;">まだ役満の記録がありません。<br>対局中に「🌸 役満達成」ボタンから登録できます。</div>';
+            return;
+        }
+
+        allYakumans.forEach(y => {
+            const dateStr = new Date(y.timestamp).toLocaleDateString();
+            const item = document.createElement('div');
+            item.style.cssText = 'background: #1e293b; border-radius: 8px; border: 1px solid #334155; overflow: hidden; display: flex; flex-direction: column;';
+
+            let imgHtml = '';
+            if (y.imageUrl) {
+                imgHtml = `<div style="height: 120px; background: url('${y.imageUrl}') center/cover no-repeat; cursor: pointer;" onclick="window.open('${y.imageUrl}', '_blank')"></div>`;
+            } else {
+                imgHtml = `<div style="height: 120px; background: rgba(255,255,255,0.05); display: flex; align-items: center; justify-content: center; font-size: 2rem;">🀄</div>`;
+            }
+
+            item.innerHTML = `
+                 ${imgHtml}
+                 <div style="padding: 10px;">
+                     <div style="font-size: 0.8rem; color: #94a3b8; margin-bottom: 4px;">${dateStr}</div>
+                     <div style="font-weight: bold; color: #fbbf24; font-size: 1.1rem; margin-bottom: 4px;">${y.type}</div>
+                     <div style="font-size: 0.9rem; font-weight: bold; margin-bottom: 4px;">${y.playerName}</div>
+                     <div style="font-size: 0.8rem; color: #cbd5e1; word-break: break-all;">${y.comment || ''}</div>
+                 </div>
+             `;
+            list.appendChild(item);
+        });
+
+    } catch (e) {
+        console.error(e);
+        list.innerHTML = '<div style="text-align:center; grid-column: 1/-1;">エラーが発生しました</div>';
+    }
+};

@@ -1,4 +1,4 @@
-const CACHE_NAME = 'mahjong-score-app-v202601242116';
+const CACHE_NAME = 'mahjong-score-app-v202601250133';
 const ASSETS_TO_CACHE = [
     './',
     './index.html',
@@ -25,6 +25,11 @@ self.addEventListener('install', (event) => {
 
 // Fetch Event
 self.addEventListener('fetch', (event) => {
+    // Bypass for non-GET requests (POST, PUT, DELETE, etc.)
+    if (event.request.method !== 'GET') {
+        return;
+    }
+
     event.respondWith(
         caches.match(event.request)
             .then((response) => {
