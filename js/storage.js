@@ -14,6 +14,10 @@ let db;
 try {
     firebase.initializeApp(firebaseConfig);
     db = firebase.firestore();
+    // Initialize Storage
+    if (firebase.storage) {
+        window.storage = firebase.storage();
+    }
 } catch (e) {
     console.error("Firebase Init Error:", e);
     // Alert removed to prevent blocking UI on local/offline usage
@@ -167,6 +171,15 @@ window.AppStorage.addGameToSession = async function (sessionId, gameData) {
         await sessionRef.update({
             games: firebase.firestore.FieldValue.arrayUnion(gameData)
         });
+
+        // 関連プレイヤーの最高記録を更新
+        if (gameData.players && Array.isArray(gameData.players)) {
+            const playerNames = gameData.players.map(p => p.name);
+            for (const playerName of playerNames) {
+                await window.AppStorage.updateUserTitleRecords(playerName);
+            }
+        }
+
         return true;
     } catch (e) {
         console.error("addGameToSession failed:", e);
@@ -185,8 +198,20 @@ window.AppStorage.updateGameInSession = async function (sessionId, gameId, updat
         const games = session.games || [];
         const index = games.findIndex(g => g.id === Number(gameId));
         if (index !== -1) {
+            // 編集前のプレイヤー名を記録
+            const oldPlayers = games[index].players ? games[index].players.map(p => p.name) : [];
+
             games[index] = updatedGameData;
             await sessionRef.update({ games: games });
+
+            // 編集前と編集後のプレイヤーをマージして最高記録を更新
+            const newPlayers = updatedGameData.players ? updatedGameData.players.map(p => p.name) : [];
+            const allPlayers = [...new Set([...oldPlayers, ...newPlayers])];
+
+            for (const playerName of allPlayers) {
+                await window.AppStorage.updateUserTitleRecords(playerName);
+            }
+
             return true;
         }
     }
@@ -205,7 +230,29 @@ window.AppStorage.removeSession = async function (sessionId) {
         console.warn("Attempted to delete a locked session.");
         return false;
     }
+
+    // 削除前にセッションに含まれる全プレイヤーを記録
+    const playersToUpdate = new Set();
+    if (doc.exists) {
+        const session = doc.data();
+        if (session.games && Array.isArray(session.games)) {
+            session.games.forEach(game => {
+                if (game.players && Array.isArray(game.players)) {
+                    game.players.forEach(p => {
+                        if (p.name) playersToUpdate.add(p.name);
+                    });
+                }
+            });
+        }
+    }
+
     await db.collection("sessions").doc(String(sessionId)).delete();
+
+    // 削除したセッションに関連するプレイヤーの最高記録を再計算
+    for (const playerName of playersToUpdate) {
+        await window.AppStorage.updateUserTitleRecords(playerName);
+    }
+
     return true;
 };
 
@@ -215,11 +262,167 @@ window.AppStorage.removeGameFromSession = async function (sessionId, gameId) {
     if (doc.exists) {
         const session = doc.data();
         const games = session.games || [];
+
+        // 削除前のプレイヤー名を記録
+        const gameToRemove = games.find(g => g.id === Number(gameId));
+        const playersToUpdate = gameToRemove && gameToRemove.players ? gameToRemove.players.map(p => p.name) : [];
+
         const newGames = games.filter(g => g.id !== Number(gameId));
         await sessionRef.update({ games: newGames });
+
+        // 削除したゲームに関連するプレイヤーの最高記録を再計算
+        for (const playerName of playersToUpdate) {
+            await window.AppStorage.updateUserTitleRecords(playerName);
+        }
+
         return true;
     }
     return false;
+};
+
+// --- Title Records ---
+
+/**
+ * ユーザーの最高記録を取得
+ * @param {string} userName - ユーザー名
+ * @returns {Object|null} 最高記録オブジェクト、または存在しない場合はnull
+ */
+window.AppStorage.getUserTitleRecords = async function (userName) {
+    try {
+        const userDoc = await db.collection("users").doc(userName).get();
+        if (userDoc.exists) {
+            const data = userDoc.data();
+            return data.titleRecords || null;
+        }
+        return null;
+    } catch (e) {
+        console.error("getUserTitleRecords failed:", e);
+        return null;
+    }
+};
+
+/**
+ * ユーザーの最高記録を更新
+ * 全セッションから統計を再計算し、最高記録を更新
+ * @param {string} userName - ユーザー名
+ * @returns {boolean} 成功したかどうか
+ */
+window.AppStorage.updateUserTitleRecords = async function (userName) {
+    try {
+        // 全セッションを取得
+        const sessions = await window.AppStorage.getSessions();
+
+        // ユーザーの全ゲームを集計
+        const userGames = [];
+        sessions.forEach(s => {
+            s.games.forEach(g => {
+                const p = g.players.find(x => x.name === userName);
+                if (p) {
+                    userGames.push({
+                        rank: p.rank,
+                        score: p.score,
+                        finalScore: p.finalScore,
+                        date: s.date,
+                        yakuman: p.yakuman || []
+                    });
+                }
+            });
+        });
+
+        // データがない場合は空の記録を保存
+        if (userGames.length === 0) {
+            const emptyRecords = {
+                maxCumulativeScore: 0,
+                minAverageRank: 0,
+                maxConsecutiveTop: 0,
+                maxConsecutiveRentai: 0,
+                maxConsecutiveAvoidLast: 0,
+                maxHighScore: 0,
+                maxGameCount: 0,
+                yakumanCount: 0,
+                hasTenhou: false,
+                hasChiihou: false,
+                lastUpdated: firebase.firestore.FieldValue.serverTimestamp()
+            };
+            await db.collection("users").doc(userName).set({ titleRecords: emptyRecords }, { merge: true });
+            return true;
+        }
+
+        // 日付順にソート
+        userGames.sort((a, b) => new Date(a.date) - new Date(b.date));
+
+        // 統計を計算
+        let currentTop = 0, maxTop = 0;
+        let currentRen = 0, maxRen = 0;
+        let currentAvoid = 0, maxAvoid = 0;
+        let highScore = -Infinity;
+        let totalScore = 0;
+        let totalRank = 0;
+        let yakumanCount = 0;
+        let hasTenhou = false;
+        let hasChiihou = false;
+        let maxCumulativeScore = -Infinity;
+
+        userGames.forEach(g => {
+            // 連続トップ
+            if (g.rank === 1) currentTop++; else currentTop = 0;
+            if (currentTop > maxTop) maxTop = currentTop;
+
+            // 連続連対
+            if (g.rank <= 2) currentRen++; else currentRen = 0;
+            if (currentRen > maxRen) maxRen = currentRen;
+
+            // 連続ラス回避
+            if (g.rank < 4) currentAvoid++; else currentAvoid = 0;
+            if (currentAvoid > maxAvoid) maxAvoid = currentAvoid;
+
+            // ハイスコア
+            if (g.score > highScore) highScore = g.score;
+
+            // 累積スコア
+            totalScore += (g.finalScore || 0);
+            if (totalScore > maxCumulativeScore) maxCumulativeScore = totalScore;
+
+            // 平均順位用
+            totalRank += g.rank;
+
+            // 役満集計
+            if (g.yakuman && Array.isArray(g.yakuman)) {
+                yakumanCount += g.yakuman.length;
+                g.yakuman.forEach(y => {
+                    if (y.type === '天和') hasTenhou = true;
+                    if (y.type === '地和') hasChiihou = true;
+                });
+            }
+        });
+
+        const gameCount = userGames.length;
+        const avgRank = gameCount > 0 ? parseFloat((totalRank / gameCount).toFixed(2)) : 0;
+
+        // 平均順位は30戦以上で記録
+        const minAverageRank = gameCount >= 30 ? avgRank : Infinity;
+
+        // 最高記録をFirestoreに保存
+        const titleRecords = {
+            maxCumulativeScore: parseFloat(maxCumulativeScore.toFixed(1)),
+            minAverageRank: minAverageRank === Infinity ? 0 : minAverageRank,
+            maxConsecutiveTop: maxTop,
+            maxConsecutiveRentai: maxRen,
+            maxConsecutiveAvoidLast: maxAvoid,
+            maxHighScore: highScore === -Infinity ? 0 : highScore,
+            maxGameCount: gameCount,
+            yakumanCount: yakumanCount,
+            hasTenhou: hasTenhou,
+            hasChiihou: hasChiihou,
+            lastUpdated: firebase.firestore.FieldValue.serverTimestamp()
+        };
+
+        await db.collection("users").doc(userName).set({ titleRecords: titleRecords }, { merge: true });
+        return true;
+    } catch (e) {
+        console.error("updateUserTitleRecords failed:", e);
+        return false;
+    }
 };
 
 // --- Leagues ---
@@ -473,6 +676,84 @@ window.AppStorage.deleteLeague = async function (leagueId) {
         return true;
     } catch (e) {
         console.error("deleteLeague failed:", e);
+        return false;
+    }
+};
+
+// --- Storage (Images) ---
+window.AppStorage.uploadImage = async function (file, path, onProgress) {
+    if (!window.storage) {
+        console.error("Firebase Storage not initialized");
+        return null;
+    }
+
+    // Auth Check
+    const currentUser = firebase.auth().currentUser;
+    if (!currentUser) {
+        const errorMsg = "ログインしていません。アップロードにはログインが必要です。";
+        console.error(errorMsg);
+        alert(errorMsg); // Alert immediately to user
+        return null; // Or reject promise? The caller expects a promise usually.
+        // Actually, returning null will likely cause the caller (await uploadImage) to get null, 
+        // which might be handled or processed as "success with no URL".
+        // Better to throw error or let the caller verify.
+        // But for deep debugging, let's throw.
+        throw new Error(errorMsg);
+    }
+    try {
+        const storageRef = window.storage.ref();
+        const imageRef = storageRef.child(path);
+        const uploadTask = imageRef.put(file);
+
+        return new Promise((resolve, reject) => {
+            // Timeout after 30 seconds
+            const timeoutId = setTimeout(() => {
+                uploadTask.cancel();
+                reject(new Error("Upload timed out (network issue?)"));
+            }, 30000);
+
+            uploadTask.on('state_changed',
+                (snapshot) => {
+                    if (onProgress) {
+                        const progress = (snapshot.bytesTransferred / snapshot.totalBytes) * 100;
+                        onProgress(progress);
+                    }
+                },
+                (error) => {
+                    clearTimeout(timeoutId);
+                    console.error("Upload failed in task:", error);
+                    reject(error);
+                },
+                async () => {
+                    clearTimeout(timeoutId);
+                    try {
+                        const url = await uploadTask.snapshot.ref.getDownloadURL();
+                        resolve(url);
+                    } catch (e) {
+                        reject(e);
+                    }
+                }
+            );
+        });
+    } catch (e) {
+        console.error("Upload failed:", e);
+        return null;
+    }
+};
+
+window.AppStorage.deleteImage = async function (pathOrUrl) {
+    if (!window.storage) return false;
+    try {
+        let imageRef;
+        if (pathOrUrl.startsWith('http')) {
+            imageRef = window.storage.refFromURL(pathOrUrl);
+        } else {
+            imageRef = window.storage.ref().child(pathOrUrl);
+        }
+        await imageRef.delete();
+        return true;
+    } catch (e) {
+        console.error("Delete image failed:", e);
         return false;
     }
 };
