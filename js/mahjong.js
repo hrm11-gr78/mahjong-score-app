@@ -14,13 +14,14 @@
 window.Mahjong = {};
 
 /**
+/**
  * Calculate final scores including Oka and Uma
  * @param {number[]} scores - Array of 4 raw scores (integer)
  * @param {object} settings - Settings object { startScore, returnScore, uma, tieBreaker }
- * @param {object} [priorityMap] - Optional map { index: priorityValue } for manual tie-breaking (higher value = higher rank)
+ * @param {object|string[]} [priorityInput] - Optional map { index: priorityValue } OR Array of winds ["東", "南", ...]
  * @returns {object|object[]} Array of result objects OR { needsTieBreaker: true, tiedIndices: [[0,1]] }
  */
-window.Mahjong.calculateResult = function (scores, settings, priorityMap = null) {
+window.Mahjong.calculateResult = function (scores, settings, priorityInput = null) {
     // Default settings
     const startScore = settings?.startScore ?? 25000;
     const returnScore = settings?.returnScore ?? 30000;
@@ -28,6 +29,25 @@ window.Mahjong.calculateResult = function (scores, settings, priorityMap = null)
     const tieBreaker = settings?.tieBreaker ?? 'priority';
 
     const oka = (returnScore - startScore) * 4 / 1000;
+
+    // Determine Priority Map from Input
+    let priorityMap = null;
+    if (priorityInput) {
+        if (Array.isArray(priorityInput)) {
+            // It's a winds array: ["東", "南", "西", "北"] (example)
+            // East > South > West > North
+            // Map to values: East=4, South=3, West=2, North=1
+            const windVal = { "東": 4, "南": 3, "西": 2, "北": 1 };
+            priorityMap = {};
+            priorityInput.forEach((w, idx) => {
+                if (windVal[w]) priorityMap[idx] = windVal[w];
+            });
+            // If any wind is missing/invalid, priorityMap might be partial, handled below.
+        } else {
+            // It's a manual map object
+            priorityMap = priorityInput;
+        }
+    }
 
     // 1. Create player objects
     let players = scores.map((score, index) => ({

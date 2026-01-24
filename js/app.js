@@ -383,7 +383,7 @@ function navigateTo(targetId) {
 
     // Show on main tabs (Home, Users, Roulette)
     // Note: League section itself is a "main" view but handled via header now.
-    const mainTabs = ['home', 'users', 'roulette', 'league-section'];
+    const mainTabs = ['home', 'users', 'roulette', 'league-section', 'session-detail', 'input', 'user-detail', 'settings'];
 
     if (settingsBtn) {
         if (mainTabs.includes(targetId)) {
@@ -1357,10 +1357,48 @@ async function renderUserDetail(userName) {
                     <div style="font-size: 1.1rem; font-weight: bold;">${rentaiRate}</div>
                 </div>
                 <div style="text-align: center;">
-                    <div style="font-size: 0.8rem; margin-bottom: 3px; color: #cbd5e1;">ラス回避率</div>
+                <div style="font-size: 0.8rem; margin-bottom: 3px; color: #cbd5e1;">ラス回避率</div>
                     <div style="font-size: 1.1rem; font-weight: bold;">${avoidLastRate}</div>
                 </div>
             </div>
+
+            <!-- Seat Stats (Wind Total Score) -->
+            ${(() => {
+                // Calculate Wind Totals
+                const windStats = { "東": 0, "南": 0, "西": 0, "北": 0 };
+                chronological.forEach(session => {
+                    session.games.forEach(game => {
+                        const pData = game.players.find(p => p.name === userName);
+                        if (pData && pData.wind && windStats[pData.wind] !== undefined) {
+                            windStats[pData.wind] += pData.finalScore;
+                        }
+                    });
+                });
+
+                // Generate HTML
+                const winds = ["東", "南", "西", "北"];
+                let windHtml = '';
+                winds.forEach(w => {
+                    const score = Math.round(windStats[w] * 10) / 10;
+                    const color = score > 0 ? '#4ade80' : (score < 0 ? '#f87171' : '#cbd5e1');
+                    const sign = score > 0 ? '+' : '';
+                    windHtml += `
+                        <div style="text-align: center; background: rgba(255,255,255,0.05); padding: 8px; border-radius: 8px;">
+                            <div style="font-size: 0.8rem; color: #94a3b8; margin-bottom: 2px;">${w}</div>
+                            <div style="font-size: 1rem; font-weight: bold; color: ${color};">${sign}${score}</div>
+                        </div>
+                    `;
+                });
+
+                return `
+                    <div style="margin: 20px auto 0; width: 100%; max-width: 400px;">
+                        <div style="font-size: 0.9rem; color: rgba(255,255,255,0.7); margin-bottom: 5px; text-align: center;">起家別トータルスコア</div>
+                        <div style="display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 8px;">
+                            ${windHtml}
+                        </div>
+                    </div>
+                `;
+            })()}
 
             <!-- Graph Container -->
             <div style="margin: 20px auto 10px; width: 100%; max-width: 400px;">
@@ -1731,11 +1769,7 @@ async function openSession(sessionId) {
         sessionRateSelect.disabled = !!session.locked;
     }
 
-    // Add Game Button Lock
-    const addGameBtn = document.getElementById('add-game-btn');
-    if (addGameBtn) {
-        addGameBtn.style.display = session.locked ? 'none' : 'flex';
-    }
+
 
     // Finish/Resume Button
     renderSessionControls(session);
@@ -1761,6 +1795,24 @@ async function openSession(sessionId) {
     }
 
     navigateTo('session-detail');
+
+    // Add Game Button Lock (Apply AFTER navigation so it overrides default visibility)
+    const newGameBtn = document.getElementById('new-game-btn');
+    if (newGameBtn) {
+        if (session.locked) {
+            newGameBtn.disabled = true;
+            newGameBtn.innerHTML = "🔒 セットはロックされています";
+            newGameBtn.style.backgroundColor = "#475569"; // Slate-600
+            newGameBtn.style.cursor = "not-allowed";
+            newGameBtn.style.opacity = "0.7";
+        } else {
+            newGameBtn.disabled = false;
+            newGameBtn.innerHTML = "+ 対局を追加";
+            newGameBtn.style.backgroundColor = ""; // Reset
+            newGameBtn.style.cursor = "";
+            newGameBtn.style.opacity = "";
+        }
+    }
 }
 
 function renderSessionControls(session) {
@@ -1799,17 +1851,31 @@ function renderSessionControls(session) {
             }
         };
     } else {
-        btn.textContent = 'セット終了';
+        btn.textContent = 'セット終了 (ロックする)';
         btn.className = 'btn-primary';
-        btn.style.cssText = 'width: 100%; padding: 12px; font-weight: bold; background: #ef4444;'; // Reddish to signify "Stop"
+        btn.style.cssText = 'width: 100%; padding: 12px; font-weight: bold; margin-bottom: 10px;'; // Add margin for spacing
         btn.onclick = async () => {
-            if (confirm('セットを終了しますか？\n対局の追加や編集ができなくなります。')) {
+            if (confirm('セットを終了してロックしますか？\n(後から解除も可能です)')) {
                 await window.AppStorage.updateSession(session.id, { locked: true });
                 await openSession(session.id);
             }
         };
     }
     controlsDiv.appendChild(btn);
+
+    // Share Button
+    const shareBtn = document.createElement('button');
+    shareBtn.innerHTML = '📷 画像共有';
+    shareBtn.className = 'btn-secondary';
+    shareBtn.style.cssText = 'width: 100%; padding: 12px; font-weight: bold; background: linear-gradient(135deg, #6366f1, #8b5cf6); color: white; border: none; margin-top: 10px;';
+    shareBtn.onclick = () => {
+        if (window.Share) {
+            window.Share.generateSessionImage(session);
+        } else {
+            alert('Share module not loaded.');
+        }
+    };
+    controlsDiv.appendChild(shareBtn);
 }
 
 async function renderSessionTotal(session) {
@@ -2010,7 +2076,8 @@ function renderGameList(session) {
             rows += `
                 <tr>
                     <td>${p.rank}</td>
-                    <td>${p.name}</td>
+                    <td>${p.rank}</td>
+                    <td>${p.wind ? `<span style="display:inline-block; width:20px; text-align:center; margin-right:5px; color:#94a3b8; font-weight:bold;">${p.wind}</span>` : ''}${p.name}</td>
                     <td>${p.rawScore}</td>
                     <td class="${scoreClass}">${scoreStr}</td>
                 </tr>
@@ -2132,6 +2199,13 @@ async function prepareInputForm(gameToEdit = null) {
     // Hard to tell difference strictly, but usually we start with Points.
     setInputMode(false);
 
+    // Clear all input fields and wind selects
+    const inputs = document.querySelectorAll('#score-form input[type="number"]');
+    const windSelects = document.querySelectorAll('#score-form select[name$="-wind"]');
+
+    inputs.forEach(input => input.value = '');
+    windSelects.forEach(sel => sel.value = ''); // Reset winds
+
     if (gameToEdit) {
         totalCheck.textContent = "合計: 100000";
         totalCheck.className = "total-check valid";
@@ -2163,9 +2237,11 @@ async function prepareInputForm(gameToEdit = null) {
         // But legacy data might vary. 
         // Let's assume Points Mode for now as requested "Default".
 
-        for (let i = 0; i < 4; i++) {
-            const pName = session.players[i];
-            const pData = gameToEdit.players.find(p => p.name === pName);
+        // Need to map game.players back to session.players order
+        // const session = await window.AppStorage.getSession(currentSessionId); // Already fetched above
+
+        session.players.forEach((pName, i) => {
+            const pData = gameToEdit.players.find(gp => gp.name === pName);
             if (pData) {
                 const scoreInput = document.querySelector(`input[name="p${i + 1}-score"]`);
                 if (scoreInput) {
@@ -2178,8 +2254,13 @@ async function prepareInputForm(gameToEdit = null) {
                         scoreInput.value = pData.finalScore;
                     }
                 }
+                // Set Wind
+                const windSel = document.querySelector(`select[name="p${i + 1}-wind"]`);
+                if (windSel && pData.wind) {
+                    windSel.value = pData.wind;
+                }
             }
-        }
+        });
         validateScoreInput();
     }
 }
@@ -2263,11 +2344,30 @@ scoreForm.addEventListener('submit', async (e) => {
     const formData = new FormData(scoreForm);
     const session = await window.AppStorage.getSession(currentSessionId);
 
-    // Gather scores
+    // Gather scores and winds
     const playerScores = []; // Array of raw scores OR direct final scores
+    const playerWinds = [];
     for (let i = 1; i <= 4; i++) {
         const val = Number(formData.get(`p${i}-score`));
+        const wind = formData.get(`p${i}-wind`);
         playerScores.push(val);
+        playerWinds.push(wind);
+    }
+
+    // Wind Validation: All or None
+    const setWinds = playerWinds.filter(w => w !== "");
+    if (setWinds.length > 0 && setWinds.length < 4) {
+        alert("起家・場所決めの入力が不完全です。\n設定する場合は全員分を入力してください（設定しない場合は全員「-」にしてください）。");
+        return;
+    }
+
+    // Check for Duplicate Winds if all are set
+    if (setWinds.length === 4) {
+        const uniqueWinds = new Set(setWinds);
+        if (uniqueWinds.size !== 4) {
+            alert("風（方角）が重複しています。\n東・南・西・北をそれぞれ1人ずつ割り当ててください。");
+            return;
+        }
     }
 
     // Calculate or Assign Result
@@ -2289,11 +2389,30 @@ scoreForm.addEventListener('submit', async (e) => {
         let tempPlayers = session.players.map((name, index) => ({
             name: name,
             finalScore: playerScores[index],
+            wind: playerWinds[index],
             index: index
         }));
 
         // 3. Assign ranks based on final score
-        tempPlayers.sort((a, b) => b.finalScore - a.finalScore);
+        // Define Wind Priority
+        const windOrder = { "東": 0, "南": 1, "西": 2, "北": 3 };
+        const tieRule = rules.tieBreaker || 'split';
+
+        tempPlayers.sort((a, b) => {
+            if (b.finalScore !== a.finalScore) {
+                return b.finalScore - a.finalScore;
+            }
+            // Tie-breaker
+            if (tieRule === 'priority') {
+                // Check if both have valid winds
+                const wA = windOrder[a.wind];
+                const wB = windOrder[b.wind];
+                if (wA !== undefined && wB !== undefined) {
+                    return wA - wB; // Lower index (East=0) wins (comes first)
+                }
+            }
+            return 0;
+        });
 
         tempPlayers.forEach((p, i) => {
             p.rank = i + 1;
@@ -2352,10 +2471,15 @@ scoreForm.addEventListener('submit', async (e) => {
         const scores = playerScores.map(s => s * 100); // x100 back to full points
 
         // Check ties logic (if priority needed)
-        const checkResult = window.Mahjong.calculateResult(scores, session.rules);
+        // Pass playerWinds as 3rd optional argument
+        const checkResult = window.Mahjong.calculateResult(scores, session.rules, playerWinds);
 
         if (checkResult.needsTieBreaker) {
-            // Need to resolve ties
+            // Need to resolve ties (MANUALLY)
+            // This happens if winds are NOT set (partial input check prevents this, but maybe empty strings passed)
+            // OR if duplicate winds caused conflicts (validation prevents this)
+            // OR if tieBreaker rule is 'priority' but wind data was insufficient to resolve it.
+
             // Store pending data and show modal
             pendingGameData = {
                 playerData: session.players.map((name, i) => ({ name: name, score: scores[i] })),
@@ -2371,7 +2495,8 @@ scoreForm.addEventListener('submit', async (e) => {
             name: session.players[i],
             rawScore: r.rawScore,
             rank: r.rank,
-            finalScore: r.finalScore
+            finalScore: r.finalScore,
+            wind: playerWinds[i] // Ensure wind is attached
         }));
     }
 
