@@ -482,10 +482,10 @@ input[type=number] {
 }
 
 /* Header Settings Button */
-#header-settings-btn {
+/* Header Icons */
+.header-icon {
     position: absolute;
     top: 50%;
-    right: 0;
     transform: translateY(-50%);
     background: none;
     border: none;
@@ -494,30 +494,31 @@ input[type=number] {
     padding: 10px;
     z-index: 200;
     transition: transform 0.2s;
+}
+
+.header-icon:hover {
+    transform: translateY(-50%) scale(1.1);
+}
+
+#header-settings-btn {
+    right: 0;
 }
 
 #header-settings-btn:hover {
     transform: translateY(-50%) rotate(45deg);
 }
 
-/* Header League Button */
 #header-league-btn {
-    position: absolute;
-    top: 50%;
-    right: 50px;
-    /* Positioned left of settings */
-    transform: translateY(-50%);
-    background: none;
-    border: none;
-    font-size: 1.5rem;
-    cursor: pointer;
-    padding: 10px;
-    z-index: 200;
-    transition: transform 0.2s;
+    left: 50px;
+    right: auto;
 }
 
-#header-league-btn:hover {
-    transform: translateY(-50%) scale(1.1);
+#header-gallery-btn {
+    right: 50px;
+}
+
+#header-profile-btn {
+    left: 0;
 }
 
 /* Player Select Wrapper */

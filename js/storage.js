@@ -3,7 +3,6 @@ const firebaseConfig = {
     apiKey: "AIzaSyCk-FlI_dTmLfRb5d4WhbdP6SJ9s_6QyIw",
     authDomain: "jong-log.firebaseapp.com",
     projectId: "jong-log",
-    storageBucket: "jong-log.firebasestorage.app",
     messagingSenderId: "615006808230",
     appId: "1:615006808230:web:403e216552a3347ee4ec67",
     measurementId: "G-8X6V557373"
@@ -14,10 +13,7 @@ let db;
 try {
     firebase.initializeApp(firebaseConfig);
     db = firebase.firestore();
-    // Initialize Storage
-    if (firebase.storage) {
-        window.storage = firebase.storage();
-    }
+
 } catch (e) {
     console.error("Firebase Init Error:", e);
     // Alert removed to prevent blocking UI on local/offline usage
@@ -701,39 +697,30 @@ window.AppStorage.uploadImage = async function (file, path, onProgress) {
         throw new Error(errorMsg);
     }
     try {
-        const storageRef = window.storage.ref();
-        const imageRef = storageRef.child(path);
-        const uploadTask = imageRef.put(file);
-
         return new Promise((resolve, reject) => {
-            // Timeout after 30 seconds
-            const timeoutId = setTimeout(() => {
-                uploadTask.cancel();
-                reject(new Error("Upload timed out (network issue?)"));
-            }, 30000);
+            const reader = new FileReader();
 
-            uploadTask.on('state_changed',
-                (snapshot) => {
-                    if (onProgress) {
-                        const progress = (snapshot.bytesTransferred / snapshot.totalBytes) * 100;
-                        onProgress(progress);
-                    }
-                },
-                (error) => {
-                    clearTimeout(timeoutId);
-                    console.error("Upload failed in task:", error);
-                    reject(error);
-                },
-                async () => {
-                    clearTimeout(timeoutId);
-                    try {
-                        const url = await uploadTask.snapshot.ref.getDownloadURL();
-                        resolve(url);
-                    } catch (e) {
-                        reject(e);
-                    }
-                }
-            );
+            // Simulate progress for better UX
+            let progress = 0;
+            const progressInterval = setInterval(() => {
+                progress += 20;
+                if (progress > 100) progress = 100;
+                if (onProgress) onProgress(progress);
+                if (progress >= 100) clearInterval(progressInterval);
+            }, 100);
+
+            reader.onload = (e) => {
+                clearInterval(progressInterval);
+                if (onProgress) onProgress(100);
+                resolve(e.target.result); // Resolve with Base64 string
+            };
+
+            reader.onerror = (e) => {
+                clearInterval(progressInterval);
+                reject(new Error("Failed to read file as Base64"));
+            };
+
+            reader.readAsDataURL(file);
         });
     } catch (e) {
         console.error("Upload failed:", e);
@@ -743,6 +730,13 @@ window.AppStorage.uploadImage = async function (file, path, onProgress) {
 
 window.AppStorage.deleteImage = async function (pathOrUrl) {
     if (!window.storage) return false;
+
+    // Skip if it's a Base64 string (nothing to delete in storage)
+    if (pathOrUrl && pathOrUrl.startsWith('data:')) {
+        console.log("Skipping deletion for Base64 image");
+        return true;
+    }
+
     try {
         let imageRef;
         if (pathOrUrl.startsWith('http')) {
