@@ -105,7 +105,7 @@ const Share = {
             const chartDataUrl = chartCanvas.toDataURL();
             html += `
                 <div style="background: rgba(30, 41, 59, 0.6); border: 2px solid #334155; border-radius: 20px; padding: 20px; height: 400px; display: flex; align-items: center; justify-content: center;">
-                    <img src="${chartDataUrl}" style="width: 100%; height: 100%; object-fit: contain;">
+                    <img src="${chartDataUrl}" style="max-width: 100%; max-height: 100%; width: auto; height: auto; display: block; margin: 0 auto;">
                 </div>
             `;
         } else {

@@ -396,7 +396,7 @@ function navigateTo(targetId) {
     const mainTabs = ['home', 'users', 'roulette', 'league-section', 'session-detail', 'input', 'user-detail', 'settings', 'gallery'];
 
     if (settingsBtn) {
-        if (mainTabs.includes(targetId) && targetId !== 'gallery') {
+        if (mainTabs.includes(targetId)) {
             settingsBtn.style.display = 'block';
         } else {
             settingsBtn.style.display = 'none';
@@ -404,7 +404,7 @@ function navigateTo(targetId) {
     }
 
     if (leagueBtn) {
-        if (mainTabs.includes(targetId) && targetId !== 'gallery') {
+        if (mainTabs.includes(targetId)) {
             leagueBtn.style.display = 'block';
         } else {
             leagueBtn.style.display = 'none';
@@ -412,7 +412,7 @@ function navigateTo(targetId) {
     }
 
     if (galleryBtn) {
-        if (mainTabs.includes(targetId) && targetId !== 'gallery') {
+        if (mainTabs.includes(targetId)) {
             galleryBtn.style.display = 'block';
         } else {
             galleryBtn.style.display = 'none';
@@ -2616,14 +2616,39 @@ scoreForm.addEventListener('submit', async (e) => {
         }));
     }
 
-    // [NEW] Attach Yakuman Data
+    // [NEW] Wait for any background uploads to complete
     if (pendingGameYakumans.length > 0) {
+        // Attach references first (so updates reflect in playersResult)
         playersResult.forEach(p => {
             const yList = pendingGameYakumans.filter(y => y.playerName === p.name);
             if (yList.length > 0) {
                 p.yakuman = yList;
             }
         });
+
+        // Check for active uploads
+        const activeUploads = pendingGameYakumans
+            .filter(y => y.uploadPromise)
+            .map(y => y.uploadPromise);
+
+        if (activeUploads.length > 0) {
+            const submitBtn = scoreForm.querySelector('button[type="submit"]');
+            const originalText = submitBtn ? submitBtn.textContent : '';
+            if (submitBtn) {
+                submitBtn.disabled = true;
+                submitBtn.textContent = '画像アップロード完了待ち...';
+            }
+
+            try {
+                await Promise.all(activeUploads);
+            } catch (e) {
+                console.error("Some background uploads failed", e);
+            }
+
+            if (submitBtn) {
+                submitBtn.textContent = '保存中...';
+            }
+        }
     }
 
     // Save
@@ -3487,11 +3512,18 @@ function setupYakumanModal() {
     }
 
     // IMAGE PREVIEW & UPLOAD OPTIMIZATION
-    let uploadPromise = null; // Store pending upload
+    let uploadPromise = null; // Store pending upload promise
+    let readyUploadResult = null; // Store result if upload finishes before save
 
     if (imageInput) {
-        imageInput.addEventListener('change', (e) => {
+        imageInput.addEventListener('change', async (e) => {
             const file = e.target.files[0];
+
+            // Reset states for new selection
+            uploadPromise = null;
+            readyUploadResult = null;
+            if (saveBtn) saveBtn.disabled = false; // Re-enable save button
+
             if (file) {
                 // 1. Preview
                 const reader = new FileReader();
@@ -3509,9 +3541,6 @@ function setupYakumanModal() {
                     progressContainer.style.display = 'block';
                     progressBar.style.width = '0%';
                 }
-
-                saveBtn.textContent = '画像アップロード中...';
-                saveBtn.disabled = true; // Block save until upload completes as requested
 
                 // Create promise
                 uploadPromise = (async () => {
@@ -3532,23 +3561,31 @@ function setupYakumanModal() {
                 })();
 
                 // On completion or failure
-                uploadPromise.then(() => {
-                    saveBtn.textContent = '登録する';
-                    saveBtn.disabled = false;
+                uploadPromise.then((result) => {
+                    readyUploadResult = result; // Store the successful result
                     if (progressBar) progressBar.style.width = '100%';
+                    console.log("Image upload finished in background.");
                 }).catch((err) => {
                     console.error("Upload Promise Failed:", err);
                     alert(`アップロードに失敗しました。\n詳細: ${err.message || err.code || '不明なエラー'}`);
 
-                    saveBtn.textContent = 'アップロード失敗 (再選択してください)';
-                    saveBtn.disabled = true; // Still disabled if failed
+                    // Clear states on failure
                     uploadPromise = null;
+                    readyUploadResult = null;
                     if (progressContainer) progressContainer.style.display = 'none';
+                    if (saveBtn) {
+                        saveBtn.textContent = 'アップロード失敗 (再選択してください)';
+                        saveBtn.disabled = true; // Keep disabled if failed
+                    }
                 });
             } else {
+                // No file selected, clear states
                 uploadPromise = null;
-                saveBtn.textContent = '登録する';
-                saveBtn.disabled = false;
+                readyUploadResult = null;
+                if (saveBtn) {
+                    saveBtn.textContent = '登録する';
+                    saveBtn.disabled = false;
+                }
                 const progressContainer = document.getElementById('yakuman-upload-progress-container');
                 if (progressContainer) progressContainer.style.display = 'none';
             }
@@ -3561,52 +3598,80 @@ function setupYakumanModal() {
             const player = playerSelect.value;
             const type = typeInput.value.trim();
             const comment = commentInput.value.trim();
-            // const file = imageInput.files[0]; // Logic moved to promise
 
             if (!type) {
                 alert('役満の種類を入力してください');
                 return;
             }
 
-            saveBtn.disabled = true;
-            saveBtn.textContent = '保存中...';
-
-            let imageUrl = null;
-            let imagePath = null;
-
-            // Wait for existing upload
-            if (uploadPromise) {
-                try {
-                    const result = await uploadPromise;
-                    if (result) {
-                        imageUrl = result.url;
-                        imagePath = result.path;
-                    }
-                } catch (e) {
-                    alert('画像のアップロードに失敗しました。もう一度選択し直してください。');
-                    saveBtn.disabled = false;
-                    saveBtn.textContent = '登録する';
-                    return;
-                }
-            }
-
-            // Create Object
+            // Create Data Object Immediately
             const yakumanData = {
                 id: Date.now(),
                 playerName: player,
                 type: type,
                 comment: comment,
-                imageUrl: imageUrl, // Can be null
-                imagePath: imagePath, // For delete
-                timestamp: Date.now()
+                imageUrl: null, // Will be updated
+                imagePath: null,
+                timestamp: Date.now(),
+                isUploading: false,
+                uploadPromise: null // To track background upload for this specific item
             };
+
+            // Logic to handle image state
+            if (readyUploadResult) {
+                // Upload already finished successfully
+                yakumanData.imageUrl = readyUploadResult.url;
+                yakumanData.imagePath = readyUploadResult.path;
+                console.log("Using pre-uploaded image result.");
+            } else if (uploadPromise) {
+                // Upload is still in progress - Optimistic Mode
+                yakumanData.isUploading = true;
+
+                // Use the PREVIEW image as temporary placeholder if possible
+                const previewImg = document.querySelector('#yakuman-image-preview img');
+                if (previewImg && previewImg.src) {
+                    yakumanData.imageUrl = previewImg.src; // Local Blob URL
+                }
+
+                // Attach the promise to this data object so we can await it later if needed (at Game Submit)
+                yakumanData.uploadPromise = uploadPromise.then(result => {
+                    yakumanData.imageUrl = result.url;
+                    yakumanData.imagePath = result.path;
+                    yakumanData.isUploading = false;
+                    console.log("Background Upload Completed for", type);
+                }).catch(err => {
+                    console.error("Background Upload Failed for", type, err);
+                    alert(`「${type}」の画像アップロードに失敗しました。保存されません。`);
+                    // Remove from pending list
+                    const idx = pendingGameYakumans.indexOf(yakumanData);
+                    if (idx > -1) pendingGameYakumans.splice(idx, 1);
+                });
+
+                // Show toast or alert (non-blocking)
+                if (typeof showToast === 'function') showToast("画像をバックグラウンドでアップロードしています...");
+                else alert('画像をバックグラウンドでアップロードしています。\n完了するまで画面を閉じないでください。');
+
+            }
+            // If no image was selected, imageUrl and imagePath remain null, which is fine.
 
             // Add to Pending
             pendingGameYakumans.push(yakumanData);
 
             alert('役満を一時保存しました。\nこの対局の結果を保存する際に一緒に記録されます。');
 
+            // Close Modal Immediately
             modal.style.display = 'none';
+
+            // Reset form for next entry
+            typeInput.value = '';
+            commentInput.value = '';
+            imageInput.value = ''; // Clear file input
+            imagePreview.style.display = 'none';
+            imagePreview.querySelector('img').src = '';
+            uploadPromise = null; // Clear global upload state
+            readyUploadResult = null; // Clear global upload result
+            const progressContainer = document.getElementById('yakuman-upload-progress-container');
+            if (progressContainer) progressContainer.style.display = 'none';
             saveBtn.disabled = false;
             saveBtn.textContent = '登録する';
         });
@@ -3616,10 +3681,10 @@ function setupYakumanModal() {
 // Image Utility
 function resizeAndCompressImage(file, maxSide, quality) {
     return new Promise((resolve, reject) => {
-        // Timeout after 10 seconds
+        // Timeout after 60 seconds
         const timeoutId = setTimeout(() => {
             reject(new Error("Image processing timed out"));
-        }, 10000);
+        }, 60000);
 
         const url = URL.createObjectURL(file);
         const img = new Image();
@@ -3660,6 +3725,36 @@ function resizeAndCompressImage(file, maxSide, quality) {
         };
     });
 }
+
+// Image Viewer
+function openImageViewer(url) {
+    const modal = document.getElementById('image-viewer-modal');
+    const img = document.getElementById('image-viewer-img');
+    if (modal && img) {
+        img.src = url;
+        modal.style.display = 'flex';
+    }
+}
+
+// Close Image Viewer Event Listeners
+document.addEventListener('DOMContentLoaded', () => {
+    const modal = document.getElementById('image-viewer-modal');
+    const closeBtn = document.getElementById('close-image-viewer');
+
+    if (modal) {
+        modal.addEventListener('click', (e) => {
+            if (e.target === modal) {
+                modal.style.display = 'none';
+            }
+        });
+    }
+
+    if (closeBtn) {
+        closeBtn.addEventListener('click', () => {
+            if (modal) modal.style.display = 'none';
+        });
+    }
+});
 
 // Render Gallery
 window.renderGallery = async function () {
@@ -3702,7 +3797,7 @@ window.renderGallery = async function () {
 
             let imgHtml = '';
             if (y.imageUrl) {
-                imgHtml = `<div style="height: 120px; background: url('${y.imageUrl}') center/cover no-repeat; cursor: pointer;" onclick="window.open('${y.imageUrl}', '_blank')"></div>`;
+                imgHtml = `<div style="height: 120px; background: url('${y.imageUrl}') center/cover no-repeat; cursor: pointer;" onclick="openImageViewer('${y.imageUrl}')"></div>`;
             } else {
                 imgHtml = `<div style="height: 120px; background: rgba(255,255,255,0.05); display: flex; align-items: center; justify-content: center; font-size: 2rem;">🀄</div>`;
             }
