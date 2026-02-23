@@ -1327,7 +1327,99 @@ async function renderUserDetail(userName) {
         }
     }
 
-    // Calculate cumulative amount (収支)
+    // --- 直近3セットのスパークライングラフを描画 ---
+    // 固定プレースホルダー(#score-sparkline-container)のinnerHTMLを書き換える
+    const sparklineContainer = document.getElementById('score-sparkline-container');
+    if (sparklineContainer) {
+        // 直近3セットのスコア（時系列昇順）を取得
+        const recentSessions = chronological.slice(-3);
+
+        if (recentSessions.length >= 2) {
+            // セッションごとの累積スコアポイントを計算（0から始まる相対遷移）
+            const points = [0];
+            recentSessions.forEach(session => {
+                const sessionScore = sessionScores.get(session.id) || 0;
+                points.push(parseFloat((points[points.length - 1] + sessionScore).toFixed(1)));
+            });
+
+            // SVGのサイズ
+            const svgW = 280;
+            const svgH = 70;
+            const padX = 24;
+            const padY = 10;
+            const chartW = svgW - padX * 2;
+            const chartH = svgH - padY * 2;
+
+            const minVal = Math.min(...points);
+            const maxVal = Math.max(...points);
+            const range = maxVal - minVal || 1;
+
+            // 座標変換関数
+            const toX = i => padX + (i / (points.length - 1)) * chartW;
+            const toY = v => padY + chartH - ((v - minVal) / range) * chartH;
+
+            // 0ラインのY座標
+            const zeroY = toY(0);
+
+            // ポリラインの座標
+            const polylinePoints = points.map((v, i) => `${toX(i)},${toY(v)}`).join(' ');
+
+            // 塗りつぶし用のパス
+            const lastX = toX(points.length - 1);
+            const firstX = toX(0);
+
+            // 線・塗りつぶしは背景色に関わらず白系で統一（コントラスト確保）
+            const lineColor = 'rgba(255,255,255,0.95)';
+            const fillColor = 'rgba(255,255,255,0.15)';
+
+            // ドット＆ラベル生成（全ポイントに各セットのスコアを表示）
+            let dotLabels = '';
+            points.forEach((v, i) => {
+                const x = toX(i);
+                const y = toY(v);
+                const labelColor = 'rgba(255,255,255,0.9)';
+
+                // ラベルのテキスト: 各ポイントの累計スコアを表示
+                const sign = v > 0 ? '+' : '';
+                const labelText = `${sign}${v}`;
+
+                // テキスト位置: 最初はstart、最後はend、中間はmiddle
+                const textAnchor = i === 0 ? 'start' : (i === points.length - 1 ? 'end' : 'middle');
+                const labelX = i === 0 ? x + 2 : (i === points.length - 1 ? x - 2 : x);
+                // 上端に近い場合は下方向、それ以外は線から十分離して上方向に配置
+                const labelY = y <= padY + 16 ? y + 18 : y - 14;
+                dotLabels += `<text x="${labelX}" y="${labelY}" text-anchor="${textAnchor}" font-size="9" fill="${labelColor}" font-weight="bold">${labelText}</text>`;
+                dotLabels += `<circle cx="${x}" cy="${y}" r="3" fill="rgba(255,255,255,0.9)" stroke="rgba(255,255,255,0.4)" stroke-width="1.5"/>`;
+            });
+
+
+            sparklineContainer.innerHTML = `
+                <div style="margin-top: 20px; padding-top: 16px; border-top: 1px solid rgba(255,255,255,0.15);">
+                    <div style="font-size: 0.75rem; color: rgba(255,255,255,0.5); margin-bottom: 8px; letter-spacing: 0.5px;">
+                        直近${recentSessions.length}セットのスコア遷移
+                    </div>
+                    <svg width="${svgW}" height="${svgH}" viewBox="0 0 ${svgW} ${svgH}" style="overflow:visible; max-width:100%;">
+                        <line x1="${padX}" y1="${zeroY}" x2="${svgW - padX}" y2="${zeroY}"
+                              stroke="rgba(255,255,255,0.2)" stroke-width="1" stroke-dasharray="4,3"/>
+                        <path d="M${firstX},${zeroY} ${points.map((v, i) => `L${toX(i)},${toY(v)}`).join(' ')} L${lastX},${zeroY} Z"
+                              fill="${fillColor}"/>
+                        <polyline points="${polylinePoints}"
+                                  fill="none"
+                                  stroke="${lineColor}"
+                                  stroke-width="2.5"
+                                  stroke-linejoin="round"
+                                  stroke-linecap="round"/>
+                        ${dotLabels}
+                    </svg>
+                </div>
+            `;
+        } else {
+            // データ不足の場合は非表示
+            sparklineContainer.innerHTML = '';
+        }
+    }
+
+
     let totalAmount = 0;
     chronological.forEach(session => {
         const sessionScore = sessionScores.get(session.id);
