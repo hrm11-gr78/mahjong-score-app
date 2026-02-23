@@ -2190,13 +2190,13 @@ function renderGameList(session) {
             rows += `
                 <tr>
                     <td>${p.rank}</td>
-                    <td>${p.rank}</td>
                     <td>${p.wind ? `<span style="display:inline-block; width:20px; text-align:center; margin-right:5px; color:#94a3b8; font-weight:bold;">${p.wind}</span>` : ''}${p.name}</td>
                     <td>${p.rawScore}</td>
                     <td class="${scoreClass}">${scoreStr}</td>
                 </tr>
              `;
         });
+
 
         // Edit/Delete Buttons logic
         // Only show if Admin OR Participant, AND Session is NOT locked
@@ -2618,22 +2618,13 @@ scoreForm.addEventListener('submit', async (e) => {
 
     // [NEW] Wait for any background uploads to complete
     if (pendingGameYakumans.length > 0) {
-        // Attach references first (so updates reflect in playersResult)
-        playersResult.forEach(p => {
-            const yList = pendingGameYakumans.filter(y => y.playerName === p.name);
-            if (yList.length > 0) {
-                p.yakuman = yList;
-            }
-        });
-
-        // Check for active uploads
+        // Check for active uploads（先にアップロード完了を待つ）
         const activeUploads = pendingGameYakumans
             .filter(y => y.uploadPromise)
             .map(y => y.uploadPromise);
 
         if (activeUploads.length > 0) {
             const submitBtn = scoreForm.querySelector('button[type="submit"]');
-            const originalText = submitBtn ? submitBtn.textContent : '';
             if (submitBtn) {
                 submitBtn.disabled = true;
                 submitBtn.textContent = '画像アップロード完了待ち...';
@@ -2649,6 +2640,24 @@ scoreForm.addEventListener('submit', async (e) => {
                 submitBtn.textContent = '保存中...';
             }
         }
+
+        // Firestoreに保存できないプロパティ（Promise・BlobURL）を除去したクリーンなオブジェクトをセット
+        playersResult.forEach(p => {
+            const yList = pendingGameYakumans.filter(y => y.playerName === p.name);
+            if (yList.length > 0) {
+                p.yakuman = yList.map(y => ({
+                    id: y.id,
+                    playerName: y.playerName,
+                    type: y.type,
+                    comment: y.comment || '',
+                    // blob: URL はFirestoreに保存できないため除外（アップロード完了後は正しいURLが入っているはず）
+                    imageUrl: (y.imageUrl && !y.imageUrl.startsWith('blob:')) ? y.imageUrl : null,
+                    imagePath: y.imagePath || null,
+                    timestamp: y.timestamp
+                    // uploadPromise, isUploading はFirestoreに保存できないため除外
+                }));
+            }
+        });
     }
 
     // Save
