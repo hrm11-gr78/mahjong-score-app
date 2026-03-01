@@ -106,6 +106,10 @@ async function init() {
 }
 
 async function handleAuthStateChanged(user, linkedUser) {
+    // Auth確認完了 → ローディング画面を非表示にする
+    const loadingScreen = document.getElementById('loading-screen');
+    if (loadingScreen) loadingScreen.classList.add('hidden');
+
     const nav = document.querySelector('nav');
     const profileBtn = document.getElementById('header-profile-btn');
 
@@ -244,29 +248,23 @@ if (showLoginBtn) {
 
 if (linkUserBtn) {
     linkUserBtn.addEventListener('click', async () => {
-        let gameUserName = linkUserSelect.value;
         const newName = linkUserNewNameInput.value.trim();
 
-        if (newName) {
-            gameUserName = newName;
-            // Validate availability? existing checks in linkUser/addUser could handle it
-        }
-
-        if (!gameUserName) {
-            alert("ユーザーを選択または入力してください。");
+        if (!newName) {
+            alert("ユーザー名を入力してください。");
             return;
         }
 
         const currentUser = window.AppStorage.auth.currentUser;
-        if (!currentUser) return; // Should not happen
+        if (!currentUser) return;
 
-        const success = await window.AppStorage.auth.linkUser(currentUser.uid, gameUserName);
+        const success = await window.AppStorage.auth.linkUser(currentUser.uid, newName);
         if (success) {
-            // Re-trigger auth state check to proceed
+            // 連携完了 → Auth状態を再取得してホームへ
             const linked = await window.AppStorage.auth.getLinkedUser(currentUser.uid);
             handleAuthStateChanged(currentUser, linked);
         } else {
-            alert("連携に失敗しました。");
+            alert("ユーザーの作成に失敗しました。別の名前を試してください。");
         }
     });
 }
@@ -729,6 +727,22 @@ const TITLES = [
     { id: 'yakuman_god', name: '役満神', icon: '✨', category: 'yakuman', rank: 'gold', check: (stats) => (stats.recordYakumanCount || stats.yakumanCount) >= 10, description: '役満10回以上達成' },
     { id: 'tenhou_holder', name: '天運の持ち主', icon: '☀️', category: 'yakuman', rank: 'special', check: (stats) => (stats.recordHasTenhou || stats.hasTenhou) === true, description: '天和達成' },
     { id: 'chiihou_holder', name: '地運の持ち主', icon: '🌏', category: 'yakuman', rank: 'special', check: (stats) => (stats.recordHasChiihou || stats.hasChiihou) === true, description: '地和達成' },
+
+    // 不名誉系称号（shame ランク）
+    // 連続ラス
+    { id: 'last_3', name: '泥沼', icon: '🌀', category: 'streak_last', rank: 'shame', threshold: 3, description: '3連続ラス' },
+    { id: 'last_5', name: '底なし沼', icon: '💀', category: 'streak_last', rank: 'shame', threshold: 5, description: '5連続ラス' },
+    { id: 'last_10', name: '奈落', icon: '☠️', category: 'streak_last', rank: 'shame', threshold: 10, description: '10連続ラス' },
+
+    // 連続逆連対（3〜4着）
+    { id: 'inverse_3', name: '苦労人', icon: '😓', category: 'streak_inverse', rank: 'shame', threshold: 3, description: '3連続逆連対（3〜4着）' },
+    { id: 'inverse_5', name: '受難者', icon: '😭', category: 'streak_inverse', rank: 'shame', threshold: 5, description: '5連続逆連対（3〜4着）' },
+    { id: 'inverse_10', name: '呪われし者', icon: '👻', category: 'streak_inverse', rank: 'shame', threshold: 10, description: '10連続逆連対（3〜4着）' },
+
+    // 累計マイナス
+    { id: 'minus_200', name: 'マイナス街道', icon: '📉', category: 'minus_score', rank: 'shame', threshold: -200, description: '累計スコア-200以下' },
+    { id: 'minus_500', name: '万年赤字', icon: '🩸', category: 'minus_score', rank: 'shame', threshold: -500, description: '累計スコア-500以下' },
+    { id: 'minus_1000', name: '底辺の帝王', icon: '👑💀', category: 'minus_score', rank: 'shame', threshold: -1000, description: '累計スコア-1000以下' },
 ];
 
 async function getUserStats(userName, allSessions) {
@@ -773,8 +787,11 @@ async function getUserStats(userName, allSessions) {
     let currentTop = 0; let maxTop = 0;
     let currentRen = 0; let maxRen = 0;
     let currentAvoid = 0; let maxAvoid = 0;
+    let currentLast = 0; let maxLast = 0;       // 連続ラス
+    let currentInverse = 0; let maxInverse = 0; // 連続逆連対（3〜4着）
     let highScore = -Infinity;
     let totalScore = 0;
+    let minCumulativeScore = Infinity;           // 最も悪い累計スコア
     let totalRank = 0;
 
     // 役満カウント
@@ -795,9 +812,18 @@ async function getUserStats(userName, allSessions) {
         if (g.rank < 4) currentAvoid++; else currentAvoid = 0;
         if (currentAvoid > maxAvoid) maxAvoid = currentAvoid;
 
+        // 連続ラス
+        if (g.rank === 4) currentLast++; else currentLast = 0;
+        if (currentLast > maxLast) maxLast = currentLast;
+
+        // 連続逆連対（3〜4着）
+        if (g.rank >= 3) currentInverse++; else currentInverse = 0;
+        if (currentInverse > maxInverse) maxInverse = currentInverse;
+
         if (g.score > highScore) highScore = g.score;
 
         totalScore += (g.finalScore || 0);
+        if (totalScore < minCumulativeScore) minCumulativeScore = totalScore;
         totalRank += g.rank;
 
         // 役満の集計
@@ -824,9 +850,12 @@ async function getUserStats(userName, allSessions) {
         maxTop,
         maxRen,
         maxAvoid,
+        maxLast,
+        maxInverse,
         highScore,
         gameCount,
         totalScore,
+        minCumulativeScore: minCumulativeScore === Infinity ? 0 : minCumulativeScore,
         avgRank,
         yakumanCount,
         hasTenhou,
@@ -837,8 +866,11 @@ async function getUserStats(userName, allSessions) {
         maxConsecutiveTop: titleRecords ? titleRecords.maxConsecutiveTop : maxTop,
         maxConsecutiveRentai: titleRecords ? titleRecords.maxConsecutiveRentai : maxRen,
         maxConsecutiveAvoidLast: titleRecords ? titleRecords.maxConsecutiveAvoidLast : maxAvoid,
+        maxConsecutiveLast: titleRecords ? (titleRecords.maxConsecutiveLast || 0) : maxLast,
+        maxConsecutiveInverse: titleRecords ? (titleRecords.maxConsecutiveInverse || 0) : maxInverse,
         maxHighScore: titleRecords ? titleRecords.maxHighScore : highScore,
         maxGameCount: titleRecords ? titleRecords.maxGameCount : gameCount,
+        worstCumulativeScore: titleRecords ? (titleRecords.worstCumulativeScore || minCumulativeScore) : minCumulativeScore,
         recordYakumanCount: titleRecords ? titleRecords.yakumanCount : yakumanCount,
         recordHasTenhou: titleRecords ? titleRecords.hasTenhou : hasTenhou,
         recordHasChiihou: titleRecords ? titleRecords.hasChiihou : hasChiihou
@@ -876,6 +908,27 @@ async function calculateUserTitles(userName, allSessions) {
         potential.sort((a, b) => b.threshold - a.threshold); // Highest first
         if (potential.length > 0) earnedTitles.push(potential[0]);
     });
+
+    // 不名誉系カテゴリ（値が小さいほど悪い → threshold 以下で取得）
+    const shameCategories = ['streak_last', 'streak_inverse'];
+    const shameTypeMap = {
+        'streak_last': stats.maxConsecutiveLast || stats.maxLast || 0,
+        'streak_inverse': stats.maxConsecutiveInverse || stats.maxInverse || 0,
+    };
+
+    shameCategories.forEach(cat => {
+        const value = shameTypeMap[cat];
+        // threshold 以上（ラス3連なら value >= 3）で解除
+        const potential = TITLES.filter(t => t.category === cat && value >= t.threshold);
+        potential.sort((a, b) => b.threshold - a.threshold);
+        if (potential.length > 0) earnedTitles.push(potential[0]);
+    });
+
+    // 累計マイナス称号（worstCumulativeScore が threshold 以下で取得）
+    const worstScore = stats.worstCumulativeScore ?? stats.minCumulativeScore ?? stats.totalScore;
+    const minusPotential = TITLES.filter(t => t.category === 'minus_score' && worstScore <= t.threshold);
+    minusPotential.sort((a, b) => a.threshold - b.threshold); // より小さい（悪い）threshold 優先
+    if (minusPotential.length > 0) earnedTitles.push(minusPotential[0]);
 
     // Also need to check 'check' based titles (Average Rank, Founder)
     // Filter for titles that have a 'check' function AND haven't been added yet (though our categories separation is clean)
@@ -964,9 +1017,19 @@ async function renderUserList() {
         const totalScore = stats ? stats.totalScore : 0;
         const avgRank = stats && stats.avgRank > 0 ? stats.avgRank.toFixed(2) : '-';
 
-        // Calculate Titles
+        // 称号を取得し、カテゴリごとに最高ランクのみ残す（ユーザー一覧表示用）
         const myTitles = await calculateUserTitles(user, sessions);
-        const titleIcons = myTitles.map(t =>
+        const rankPriority = { gold: 4, silver: 3, bronze: 2, special: 2, shame: 1 };
+        const bestByCategory = new Map();
+        myTitles.forEach(t => {
+            const prev = bestByCategory.get(t.category);
+            if (!prev || (rankPriority[t.rank] ?? 0) > (rankPriority[prev.rank] ?? 0)) {
+                bestByCategory.set(t.category, t);
+            }
+        });
+        const displayTitles = Array.from(bestByCategory.values());
+
+        const titleIcons = displayTitles.map(t =>
             `<span class="title-icon" data-name="${t.name}" data-desc="${t.description}" style="margin-right:2px; cursor:pointer;" title="${t.name}\n${t.description}">${t.icon}</span>`
         ).join('');
 
@@ -1115,13 +1178,16 @@ async function openUserDetail(userName) {
         'streak_avoid': stats.maxConsecutiveAvoidLast || stats.maxAvoid,
         'high_score': stats.maxHighScore || stats.highScore,
         'game_count': stats.maxGameCount || stats.gameCount,
-        'total_score': stats.maxCumulativeScore || stats.totalScore
-        // avg_rank handled by 'check'
+        'total_score': stats.maxCumulativeScore || stats.totalScore,
+        // 不名誉系（大きいほど悪い連続型）
+        'streak_last': stats.maxConsecutiveLast || stats.maxLast || 0,
+        'streak_inverse': stats.maxConsecutiveInverse || stats.maxInverse || 0,
+        // avg_rank は 'check' 処理
     } : {};
 
-    // Sort titles by category then rank for display
-    const catOrder = ['special', 'yakuman', 'game_count', 'total_score', 'streak_top', 'streak_rentai', 'streak_avoid', 'high_score', 'avg_rank'];
-    const rankOrder = ['bronze', 'silver', 'gold', 'special'];
+    // 称号カードのソート順（不名誉系を末尾に）
+    const catOrder = ['special', 'yakuman', 'game_count', 'total_score', 'streak_top', 'streak_rentai', 'streak_avoid', 'high_score', 'avg_rank', 'streak_last', 'streak_inverse', 'minus_score'];
+    const rankOrder = ['bronze', 'silver', 'gold', 'special', 'shame'];
 
     const sortedTitles = [...TITLES].sort((a, b) => {
         const catDiff = catOrder.indexOf(a.category) - catOrder.indexOf(b.category);
@@ -1140,8 +1206,17 @@ async function openUserDetail(userName) {
         }
         // Threshold-based titles
         else if (title.threshold !== undefined) {
-            const userVal = typeMap[title.category] || 0;
-            if (userVal >= title.threshold) isUnlocked = true;
+            if (title.category === 'minus_score') {
+                // 累計マイナス称号は最悪累計スコアが threshold 以下で解除
+                const worstScore = stats
+                    ? (stats.worstCumulativeScore ?? stats.minCumulativeScore ?? stats.totalScore ?? 0)
+                    : 0;
+                if (worstScore <= title.threshold) isUnlocked = true;
+            } else {
+                // 通常の間口比較（連続ラス・逆連対も正値 threshold なので >= でOK）
+                const userVal = typeMap[title.category] ?? 0;
+                if (userVal >= title.threshold) isUnlocked = true;
+            }
         }
 
         const card = document.createElement('div');
@@ -1158,6 +1233,7 @@ async function openUserDetail(userName) {
             else if (title.rank === 'silver') borderColor = '#c0c0c0';
             else if (title.rank === 'bronze') borderColor = '#cd7f32';
             else if (title.rank === 'special') borderColor = '#a855f7';
+            else if (title.rank === 'shame') { borderColor = '#dc2626'; bgColor = 'rgba(127, 29, 29, 0.4)'; }
         }
 
         card.style.cssText = `
@@ -1211,19 +1287,197 @@ async function openUserDetail(userName) {
 
     collectionContainer.appendChild(grid);
 
-    await renderUserDetail(userName);
+    // -----------------------------------------------------------------------
+    // 期間フィルターUI を生成
+    // -----------------------------------------------------------------------
+    const filterContainer = document.getElementById('user-detail-period-filter');
+    if (filterContainer) {
+        const FILTERS = [
+            { key: 'all', label: '全期間' },
+            { key: 'last10', label: '直近10半荘' },
+            { key: 'last50', label: '直近50半荘' },
+            { key: 'last100', label: '直近100半荘' },
+            { key: '1m', label: '1ヶ月' },
+            { key: '6m', label: '半年' },
+            { key: '1y', label: '1年' },
+            { key: 'custom', label: 'カスタム' },
+        ];
+
+        // フィルター状態をページ単位で保持
+        let currentFilter = 'all';
+        let customFrom = '';
+        let customTo = '';
+
+        // セッションをフラットな半荘単位で扱うため全ユーザーセッションを先取り
+        const allSess = await window.AppStorage.getSessions();
+        const allUserSess = allSess.filter(s =>
+            (s.players && s.players.includes(userName)) ||
+            (s.games && s.games.some(g => g.players.some(p => p.name === userName)))
+        );
+
+        /**
+         * フィルターを適用して画面を再描画する
+         */
+        async function applyFilter(key, fromVal, toVal) {
+            currentFilter = key;
+            customFrom = fromVal || customFrom;
+            customTo = toVal || customTo;
+
+            const filtered = filterSessionsByPeriod(allUserSess, key, { from: customFrom, to: customTo });
+            await renderUserDetail(userName, filtered, key);
+
+            // スコアカードのラベルをフィルターに合わせて更新
+            const labelMap = {
+                all: '累計スコア', last10: '直近10半荘スコア', last50: '直近50半荘スコア',
+                last100: '直近100半荘スコア', '1m': '直近1ヶ月スコア', '6m': '直近半年スコア',
+                '1y': '直近1年スコア', custom: '期間スコア'
+            };
+            const amountLabelMap = {
+                all: '累計収支', last10: '直近10半荘収支', last50: '直近50半荘収支',
+                last100: '直近100半荘収支', '1m': '直近1ヶ月収支', '6m': '直近半年収支',
+                '1y': '直近1年収支', custom: '期間収支'
+            };
+            const cardLabel = document.getElementById('cumulative-score-card')?.querySelector('[style*="border-radius: 20px"]');
+            if (cardLabel) cardLabel.textContent = labelMap[key] || '期間スコア';
+            const amountLabel = document.getElementById('amount-section-label');
+            if (amountLabel) amountLabel.textContent = amountLabelMap[key] || '期間収支';
+
+            // ボタン選択状態を更新
+            filterContainer.querySelectorAll('.period-btn').forEach(btn => {
+                const isActive = btn.dataset.key === key;
+                btn.style.background = isActive ? 'var(--primary-color, #bb86fc)' : 'rgba(51,65,85,0.8)';
+                btn.style.color = isActive ? '#000' : '#e2e8f0';
+                btn.style.borderColor = isActive ? 'var(--primary-color, #bb86fc)' : '#475569';
+                btn.style.fontWeight = isActive ? 'bold' : 'normal';
+            });
+
+            // カスタム欄の表示/非表示
+            const customArea = document.getElementById('period-custom-area');
+            if (customArea) customArea.style.display = (key === 'custom') ? 'flex' : 'none';
+        }
+
+        // ボタン行を構築
+        const btnRow = document.createElement('div');
+        btnRow.style.cssText = 'display:flex; flex-wrap:wrap; gap:6px; margin-bottom:8px;';
+
+        FILTERS.forEach(f => {
+            const btn = document.createElement('button');
+            btn.className = 'period-btn';
+            btn.dataset.key = f.key;
+            btn.textContent = f.label;
+            btn.style.cssText = `
+                padding: 4px 12px; border-radius: 20px; border: 1px solid #475569;
+                background: rgba(51,65,85,0.8); color: #e2e8f0;
+                font-size: 0.78rem; cursor: pointer; transition: all 0.15s;
+            `;
+            btn.addEventListener('click', () => applyFilter(f.key));
+            btnRow.appendChild(btn);
+        });
+
+        // カスタム日付入力欄
+        const customArea = document.createElement('div');
+        customArea.id = 'period-custom-area';
+        customArea.style.cssText = 'display:none; align-items:center; gap:8px; flex-wrap:wrap; margin-top:4px;';
+        customArea.innerHTML = `
+            <span style="font-size:0.8rem; color:#94a3b8;">期間：</span>
+            <input type="date" id="period-from" style="background:#1e293b; border:1px solid #475569; color:#e2e8f0; border-radius:6px; padding:3px 8px; font-size:0.8rem;">
+            <span style="color:#94a3b8;">〜</span>
+            <input type="date" id="period-to"   style="background:#1e293b; border:1px solid #475569; color:#e2e8f0; border-radius:6px; padding:3px 8px; font-size:0.8rem;">
+            <button id="period-custom-apply" style="padding:3px 12px; border-radius:6px; background:var(--primary-color,#bb86fc); color:#000; border:none; font-size:0.8rem; cursor:pointer; font-weight:bold;">適用</button>
+        `;
+
+        filterContainer.innerHTML = '';
+        filterContainer.appendChild(btnRow);
+        filterContainer.appendChild(customArea);
+
+        // カスタム適用ボタン
+        customArea.querySelector('#period-custom-apply').addEventListener('click', () => {
+            const f = document.getElementById('period-from').value;
+            const t = document.getElementById('period-to').value;
+            applyFilter('custom', f, t);
+        });
+
+        // 初期表示（全期間）
+        await applyFilter('all');
+    } else {
+        await renderUserDetail(userName);
+    }
+
     navigateTo('user-detail');
 }
 
 window.openUserDetail = openUserDetail;
 
-async function renderUserDetail(userName) {
+/**
+ * 期間フィルター処理ヘルパー
+ * @param {Array} allUserSessions - ユーザーが参加したセッション全件（時系列ソート済み）
+ * @param {string} filterKey - フィルターキー
+ * @param {{from: string, to: string}} customRange - カスタム期間（filterKey==='custom' のとき参照）
+ * @returns {Array} フィルター後のセッション
+ */
+function filterSessionsByPeriod(allUserSessions, filterKey, customRange = {}) {
+    if (!filterKey || filterKey === 'all') return allUserSessions;
+
+    const sorted = [...allUserSessions].sort((a, b) => new Date(a.date) - new Date(b.date));
+
+    // 直近N半荘（ゲーム数がちょうどNになるように最古セッションを切り詰め）
+    const lastNGames = (n) => {
+        let remaining = n;
+        const result = [];
+        for (let i = sorted.length - 1; i >= 0; i--) {
+            const session = sorted[i];
+            const games = (session.games && session.games.length) || 0;
+            if (games <= remaining) {
+                // セッション全体が必要数の範囲内 → 丸ごと追加
+                result.unshift(session);
+                remaining -= games;
+            } else {
+                // このセッションの新しい方から remaining 件だけ取り出す
+                const trimmed = { ...session, games: session.games.slice(-remaining) };
+                result.unshift(trimmed);
+                remaining = 0;
+            }
+            if (remaining <= 0) break;
+        }
+        return result;
+    };
+
+    if (filterKey === 'last10') return lastNGames(10);
+    if (filterKey === 'last50') return lastNGames(50);
+    if (filterKey === 'last100') return lastNGames(100);
+
+    const now = new Date();
+    let cutoff;
+    if (filterKey === '1m') { cutoff = new Date(now); cutoff.setMonth(cutoff.getMonth() - 1); }
+    if (filterKey === '6m') { cutoff = new Date(now); cutoff.setMonth(cutoff.getMonth() - 6); }
+    if (filterKey === '1y') { cutoff = new Date(now); cutoff.setFullYear(cutoff.getFullYear() - 1); }
+    if (cutoff) return sorted.filter(s => new Date(s.date) >= cutoff);
+
+    if (filterKey === 'custom') {
+        const from = customRange.from ? new Date(customRange.from) : null;
+        const to = customRange.to ? new Date(customRange.to + 'T23:59:59') : null;
+        return sorted.filter(s => {
+            const d = new Date(s.date);
+            if (from && d < from) return false;
+            if (to && d > to) return false;
+            return true;
+        });
+    }
+
+    return allUserSessions;
+}
+
+async function renderUserDetail(userName, filteredSessions = null, filterKey = 'all') {
     const sessions = await window.AppStorage.getSessions();
-    // Filter sessions where user participated (either in session list OR in any game)
-    const userSessions = sessions.filter(s =>
+    // ユーザーが参加した全セッションを取得
+    const allUserSessions = sessions.filter(s =>
         (s.players && s.players.includes(userName)) ||
         (s.games && s.games.some(g => g.players.some(p => p.name === userName)))
     );
+
+    // フィルター済みセッションが渡された場合はそちらを使う
+    const userSessions = filteredSessions !== null ? filteredSessions : allUserSessions;
+
 
     // Sort by date (newest first for display)
     userSessions.sort((a, b) => new Date(b.date) - new Date(a.date));
@@ -1327,21 +1581,48 @@ async function renderUserDetail(userName) {
         }
     }
 
-    // --- 直近3セットのスパークライングラフを描画 ---
-    // 固定プレースホルダー(#score-sparkline-container)のinnerHTMLを書き換える
+    // --- スパークライングラフを描画 ---
     const sparklineContainer = document.getElementById('score-sparkline-container');
     if (sparklineContainer) {
-        // 直近3セットのスコア（時系列昇順）を取得
-        const recentSessions = chronological.slice(-3);
-
-        if (recentSessions.length >= 2) {
-            // セッションごとの累積スコアポイントを計算（0から始まる相対遷移）
-            const points = [0];
-            recentSessions.forEach(session => {
-                const sessionScore = sessionScores.get(session.id) || 0;
-                points.push(parseFloat((points[points.length - 1] + sessionScore).toFixed(1)));
+        // lastN フィルター時はゲーム単位で直近5半荘、それ以外はセッション単位で全期間
+        const isLastN = ['last10', 'last50', 'last100'].includes(filterKey);
+        if (isLastN) {
+            // ゲーム(半荘)単位で直近5回分を取得
+            const allGamesList = [];
+            chronological.forEach(session => {
+                session.games.forEach(game => {
+                    const p = game.players.find(x => x.name === userName);
+                    if (p) {
+                        allGamesList.push(p.finalScore);
+                    }
+                });
             });
+            const recentGames = allGamesList.slice(-5);
+            if (recentGames.length > 0) {
+                // 初期値0を除外したいため、配列は空にしてポイントを積み上げる
+                points = [];
+                let currentTotal = 0;
+                recentGames.forEach(score => {
+                    currentTotal += score;
+                    points.push(parseFloat(currentTotal.toFixed(1)));
+                });
+                labelText = `直近${recentGames.length}半荘のスコア遷移`;
+            }
+        } else {
+            // セッション(セット)単位で取得
+            if (chronological.length >= 2) {
+                points = [];
+                let currentTotal = 0;
+                chronological.forEach(session => {
+                    const sessionScore = sessionScores.get(session.id) || 0;
+                    currentTotal += sessionScore;
+                    points.push(parseFloat(currentTotal.toFixed(1)));
+                });
+                labelText = `直近${chronological.length}セットのスコア遷移`;
+            }
+        }
 
+        if (points.length >= 2) {
             // SVGのサイズ
             const svgW = 280;
             const svgH = 70;
@@ -1350,8 +1631,9 @@ async function renderUserDetail(userName) {
             const chartW = svgW - padX * 2;
             const chartH = svgH - padY * 2;
 
-            const minVal = Math.min(...points);
-            const maxVal = Math.max(...points);
+            // 0 のラインも必ずグラフ領域に収めるように min / max に 0 を含める
+            const minVal = Math.min(0, ...points);
+            const maxVal = Math.max(0, ...points);
             const range = maxVal - minVal || 1;
 
             // 座標変換関数
@@ -1395,9 +1677,9 @@ async function renderUserDetail(userName) {
 
             sparklineContainer.innerHTML = `
                 <div style="margin-top: 20px; padding-top: 16px; border-top: 1px solid rgba(255,255,255,0.15);">
-                    <div style="font-size: 0.75rem; color: rgba(255,255,255,0.5); margin-bottom: 8px; letter-spacing: 0.5px;">
-                        直近${recentSessions.length}セットのスコア遷移
-                    </div>
+                        <div style="font-size: 0.75rem; color: rgba(255,255,255,0.5); margin-bottom: 8px; letter-spacing: 0.5px;">
+                        ${labelText}
+                        </div>
                     <svg width="${svgW}" height="${svgH}" viewBox="0 0 ${svgW} ${svgH}" style="overflow:visible; max-width:100%;">
                         <line x1="${padX}" y1="${zeroY}" x2="${svgW - padX}" y2="${zeroY}"
                               stroke="rgba(255,255,255,0.2)" stroke-width="1" stroke-dasharray="4,3"/>
@@ -1439,7 +1721,7 @@ async function renderUserDetail(userName) {
             const amountDiv = document.createElement('div');
             amountDiv.style.cssText = 'margin-top: 30px; padding-top: 30px; border-top: 1px solid rgba(255,255,255,0.2);';
             amountDiv.innerHTML = `
-                <div style="font-size: 1rem; color: #e2e8f0; margin-bottom: 16px; letter-spacing: 1px; text-transform: uppercase; font-weight: 600; padding: 8px 20px; border: 2px solid rgba(226, 232, 240, 0.3); border-radius: 20px; display: inline-block;">
+                <div id="amount-section-label" style="font-size: 1rem; color: #e2e8f0; margin-bottom: 16px; letter-spacing: 1px; text-transform: uppercase; font-weight: 600; padding: 8px 20px; border: 2px solid rgba(226, 232, 240, 0.3); border-radius: 20px; display: inline-block;">
                     累計収支
                 </div>
                 <div style="display: flex; align-items: center; justify-content: center; gap: 15px;">
@@ -1516,6 +1798,12 @@ async function renderUserDetail(userName) {
     }
 
     if (statsElement) {
+        // 既存の Chart インスタンスをinnerHTML置換前に破棄
+        ['rank-pie-chart', 'rank-history-canvas-internal'].forEach(id => {
+            const c = document.getElementById(id);
+            if (c && c.chartInstance) { c.chartInstance.destroy(); c.chartInstance = null; }
+        });
+
         // Calculate percentages for pie chart legend
         const rankPcts = totalRankCounts.map(count => totalGames > 0 ? ((count / totalGames) * 100).toFixed(1) + '%' : '0.0%');
 
@@ -1607,7 +1895,7 @@ async function renderUserDetail(userName) {
 
             <!-- Graph Container -->
             <div style="margin: 20px auto 10px; width: 100%; max-width: 400px;">
-                <div style="font-size: 0.9rem; color: rgba(255,255,255,0.7); margin-bottom: 5px;">直近10戦の着順推移</div>
+                <div style="font-size: 0.9rem; color: rgba(255,255,255,0.7); margin-bottom: 5px;">フィルター期間の着順推移（${totalGames}戦）</div>
                 <div style="height: 180px; position: relative;">
                     <canvas id="rank-history-canvas-internal" style="width: 100%; height: 100%;"></canvas>
                 </div>
@@ -1626,50 +1914,52 @@ async function renderUserDetail(userName) {
         `;
 
         // Draw Pie Chart
-        // Ensure ChartDataLabels is registered if available
         if (typeof ChartDataLabels !== 'undefined') {
             Chart.register(ChartDataLabels);
         }
 
-        const pieCtx = document.getElementById('rank-pie-chart').getContext('2d');
-        new Chart(pieCtx, {
-            type: 'doughnut',
-            data: {
-                labels: ['1着', '2着', '3着', '4着'],
-                datasets: [{
-                    data: totalRankCounts,
-                    backgroundColor: [
-                        '#fcd34d', // 1st
-                        '#94a3b8', // 2nd
-                        '#475569', // 3rd
-                        '#ef4444'  // 4th
-                    ],
-                    borderColor: 'transparent',
-                    borderWidth: 0
-                }]
-            },
-            options: {
-                responsive: true,
-                maintainAspectRatio: false,
-                cutout: '50%', // Thicker ring
-                plugins: {
-                    legend: { display: false },
-                    tooltip: { enabled: false },
-                    datalabels: {
-                        color: '#fff',
-                        font: {
-                            weight: 'bold',
-                            size: 14
-                        },
-                        formatter: (value, ctx) => {
-                            if (value === 0) return '';
-                            return ctx.chart.data.labels[ctx.dataIndex];
-                        },
-                        display: true
+        const pieCanvas = document.getElementById('rank-pie-chart');
+        if (pieCanvas) {
+            const pieCtx = pieCanvas.getContext('2d');
+            pieCanvas.chartInstance = new Chart(pieCtx, {
+                type: 'doughnut',
+                data: {
+                    labels: ['1着', '2着', '3着', '4着'],
+                    datasets: [{
+                        data: totalRankCounts,
+                        backgroundColor: [
+                            '#fcd34d', // 1st
+                            '#94a3b8', // 2nd
+                            '#475569', // 3rd
+                            '#ef4444'  // 4th
+                        ],
+                        borderColor: 'transparent',
+                        borderWidth: 0
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    cutout: '50%', // Thicker ring
+                    plugins: {
+                        legend: { display: false },
+                        tooltip: { enabled: false },
+                        datalabels: {
+                            color: '#fff',
+                            font: {
+                                weight: 'bold',
+                                size: 14
+                            },
+                            formatter: (value, ctx) => {
+                                if (value === 0) return '';
+                                return ctx.chart.data.labels[ctx.dataIndex];
+                            },
+                            display: true
+                        }
                     }
                 }
-            }
-        });
+            });
+        } // end if(pieCanvas)
     }
 
     // Rank History Chart
@@ -1689,8 +1979,8 @@ async function renderUserDetail(userName) {
             });
         });
 
-        // Take last 10 games
-        const recentGames = allGames.slice(-10);
+        // フィルター期間の全ゲームを使用（直近10件に限定しない）
+        const recentGames = allGames; // フィルター済み全ゲーム
         const labels = recentGames.map((_, i) => `${i + 1}`);
         const dataPoints = recentGames.map(g => g.rank);
 
@@ -3896,9 +4186,16 @@ window.renderGallery = async function () {
             const item = document.createElement('div');
             item.style.cssText = 'background: #1e293b; border-radius: 8px; border: 1px solid #334155; overflow: hidden; display: flex; flex-direction: column;';
 
+            // imageUrl（旧）または imagePath（Base64/新）のどちらかを使う
+            // data: または http で始まる場合のみ有効な画像として扱う（旧Firebase Storageパスは除外）
+            const rawImage = y.imageUrl || y.imagePath || null;
+            const displayImage = (rawImage && (rawImage.startsWith('data:') || rawImage.startsWith('http')))
+                ? rawImage
+                : null;
+
             let imgHtml = '';
-            if (y.imageUrl) {
-                imgHtml = `<div style="height: 120px; background: url('${y.imageUrl}') center/cover no-repeat; cursor: pointer;" onclick="openImageViewer('${y.imageUrl}')"></div>`;
+            if (displayImage) {
+                imgHtml = `<div style="height: 120px; background: url('${displayImage}') center/cover no-repeat; cursor: pointer;" onclick="openImageViewer('${displayImage}')"></div>`;
             } else {
                 imgHtml = `<div style="height: 120px; background: rgba(255,255,255,0.05); display: flex; align-items: center; justify-content: center; font-size: 2rem;">🀄</div>`;
             }
