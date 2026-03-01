@@ -351,8 +351,11 @@ window.AppStorage.updateUserTitleRecords = async function (userName) {
         let currentTop = 0, maxTop = 0;
         let currentRen = 0, maxRen = 0;
         let currentAvoid = 0, maxAvoid = 0;
+        let currentLast = 0, maxLast = 0;       // 連続ラス
+        let currentInverse = 0, maxInverse = 0; // 連続逆連対（3〜4着）
         let highScore = -Infinity;
         let totalScore = 0;
+        let minCumulativeScore = Infinity;       // 最も悪い累計スコア
         let totalRank = 0;
         let yakumanCount = 0;
         let hasTenhou = false;
@@ -372,12 +375,21 @@ window.AppStorage.updateUserTitleRecords = async function (userName) {
             if (g.rank < 4) currentAvoid++; else currentAvoid = 0;
             if (currentAvoid > maxAvoid) maxAvoid = currentAvoid;
 
+            // 連続ラス
+            if (g.rank === 4) currentLast++; else currentLast = 0;
+            if (currentLast > maxLast) maxLast = currentLast;
+
+            // 連続逆連対（3〜4着）
+            if (g.rank >= 3) currentInverse++; else currentInverse = 0;
+            if (currentInverse > maxInverse) maxInverse = currentInverse;
+
             // ハイスコア
             if (g.score > highScore) highScore = g.score;
 
             // 累積スコア
             totalScore += (g.finalScore || 0);
             if (totalScore > maxCumulativeScore) maxCumulativeScore = totalScore;
+            if (totalScore < minCumulativeScore) minCumulativeScore = totalScore;
 
             // 平均順位用
             totalRank += g.rank;
@@ -401,10 +413,13 @@ window.AppStorage.updateUserTitleRecords = async function (userName) {
         // 最高記録をFirestoreに保存
         const titleRecords = {
             maxCumulativeScore: parseFloat(maxCumulativeScore.toFixed(1)),
+            worstCumulativeScore: minCumulativeScore === Infinity ? 0 : parseFloat(minCumulativeScore.toFixed(1)),
             minAverageRank: minAverageRank === Infinity ? 0 : minAverageRank,
             maxConsecutiveTop: maxTop,
             maxConsecutiveRentai: maxRen,
             maxConsecutiveAvoidLast: maxAvoid,
+            maxConsecutiveLast: maxLast,
+            maxConsecutiveInverse: maxInverse,
             maxHighScore: highScore === -Infinity ? 0 : highScore,
             maxGameCount: gameCount,
             yakumanCount: yakumanCount,

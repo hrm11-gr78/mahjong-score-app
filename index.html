@@ -33,9 +33,15 @@
             <!-- League moved to header -->
         </nav>
 
+        <!-- ローディング画面: Auth確認完了まで表示 -->
+        <div id="loading-screen">
+            <div class="loading-logo">🀄 雀ログ</div>
+            <div class="loading-spinner"></div>
+        </div>
+
         <main>
             <!-- LOGIN SECTION -->
-            <section id="login" class="active">
+            <section id="login">
                 <h2>ログイン</h2>
                 <div class="form-group">
                     <label>メールアドレス</label>
@@ -73,7 +79,7 @@
                     <label>パスワード</label>
                     <input type="password" id="signup-password" placeholder="Password">
                 </div>
-                <button id="signup-btn" class="btn-primary" style="margin-bottom: 10px;">登録してログイン</button>
+                <button id="signup-btn" class="btn-primary" style="margin-bottom: 10px;">アカウントを作成する</button>
                 <div style="display:flex; align-items:center; margin: 15px 0;">
                     <hr style="flex:1; border:none; border-top:1px solid #333;">
                     <span style="padding:0 10px; color:#666; font-size:0.8rem;">または</span>
@@ -93,20 +99,13 @@
 
             <!-- LINK USER SECTION -->
             <section id="link-user">
-                <h2>ユーザー連携</h2>
-                <p style="margin-bottom: 20px;">あなたの対局データとして使用するユーザーを選択してください。</p>
+                <h2>ユーザー名を設定</h2>
+                <p style="margin-bottom: 20px;">アプリで使用するあなたの名前を入力してください。</p>
                 <div class="form-group">
-                    <label>新しくユーザーを作成</label>
-                    <input type="text" id="link-user-new-name" placeholder="新しいユーザー名">
+                    <label>ユーザー名</label>
+                    <input type="text" id="link-user-new-name" placeholder="例：タロウ">
                 </div>
-                <div class="text-center" style="margin: 20px 0;">または</div>
-                <div class="form-group">
-                    <label>既存のユーザーから選択</label>
-                    <select id="link-user-select" class="user-select">
-                        <option value="" disabled selected>選択してください...</option>
-                    </select>
-                </div>
-                <button id="link-user-btn" class="btn-primary">保存して開始</button>
+                <button id="link-user-btn" class="btn-primary">はじめる</button>
             </section>
 
             <!-- SETTINGS SECTION -->
@@ -490,7 +489,8 @@
                     </div>
                 </div>
 
-
+                <!-- 期間フィルター -->
+                <div id="user-detail-period-filter" style="margin-bottom: 16px;"></div>
 
                 <div id="cumulative-score-card" class="history-card"
                     style="text-align: center; padding: 40px 30px; margin-bottom: 25px; background: linear-gradient(135deg, #1e293b 0%, #334155 100%); border: 2px solid #475569; box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3); position: relative; overflow: hidden;">
