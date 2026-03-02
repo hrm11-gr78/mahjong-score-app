@@ -8,6 +8,8 @@
     <link rel="stylesheet" href="css/style.css">
     <link rel="manifest" href="manifest.json">
     <meta name="theme-color" content="#121212">
+    <link rel="icon" type="image/png" href="images/icon.png">
+    <link rel="apple-touch-icon" href="images/icon.png">
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2.0.0"></script>
     <script src="https://html2canvas.hertzen.com/dist/html2canvas.min.js"></script>
@@ -15,14 +17,22 @@
 
 <body>
     <div id="app">
-        <header style="position: relative; display: flex; align-items: center; justify-content: center;">
-            <button id="header-profile-btn" class="header-icon" style="display: none;" title="ユーザー設定">👤</button>
-            <h1 id="app-title" style="cursor: pointer;">🀄 雀ログ</h1>
-            <!-- Added League Button next to Settings -->
-            <button id="header-league-btn" class="header-icon" style="display: none;" title="リーグ戦">🏆</button>
-            <button id="header-settings-btn" class="header-icon" style="display: none;">⚙️</button>
-            <!-- [NEW] Gallery Button in Header -->
-            <button id="header-gallery-btn" class="header-icon" style="display: none;">🖼️</button>
+        <header style="position: relative; display: flex; align-items: center; justify-content: space-between;">
+            <!-- 左グループ -->
+            <div style="display: flex; align-items: center; gap: 4px; flex: 1; justify-content: flex-start;">
+                <button id="header-profile-btn" class="header-icon" style="display: none;" title="ユーザー設定">👤</button>
+                <button id="header-league-btn" class="header-icon" style="display: none;" title="リーグ戦">🏆</button>
+            </div>
+            <!-- 中央タイトル -->
+            <h1 id="app-title" style="cursor: pointer; display: flex; align-items: center; flex: 0 0 auto; margin: 0;">
+                <img src="images/icon.png" alt="雀ログ" style="height: 48px; width: auto; object-fit: contain;">
+            </h1>
+            <!-- 右グループ -->
+            <div style="display: flex; align-items: center; gap: 4px; flex: 1; justify-content: flex-end;">
+                <!-- [NEW] Gallery Button in Header -->
+                <button id="header-gallery-btn" class="header-icon" style="display: none;">🖼️</button>
+                <button id="header-settings-btn" class="header-icon" style="display: none;">⚙️</button>
+            </div>
         </header>
 
         <nav style="display: none;">
@@ -35,7 +45,10 @@
 
         <!-- ローディング画面: Auth確認完了まで表示 -->
         <div id="loading-screen">
-            <div class="loading-logo">🀄 雀ログ</div>
+            <div class="loading-logo" style="display: flex; align-items: center; justify-content: center; gap: 10px;">
+                <img src="images/loading-icon.png" alt="雀ログ" style="width: 80px; height: 80px; object-fit: contain;">
+                雀ログ
+            </div>
             <div class="loading-spinner"></div>
         </div>
 
