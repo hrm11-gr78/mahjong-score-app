@@ -1584,7 +1584,11 @@ async function renderUserDetail(userName, filteredSessions = null, filterKey = '
     // --- スパークライングラフを描画 ---
     const sparklineContainer = document.getElementById('score-sparkline-container');
     if (sparklineContainer) {
-        // lastN フィルター時はゲーム単位で直近5半荘、それ以外はセッション単位で全期間
+        // 毎回必ずリセット（前回フィルターの値が残らないようにする）
+        let points = [];
+        let labelText = '';
+
+        // lastN フィルター時はゲーム単位、それ以外はセッション単位
         const isLastN = ['last10', 'last50', 'last100'].includes(filterKey);
         if (isLastN) {
             // ゲーム(半荘)単位で直近5回分を取得
@@ -1597,7 +1601,7 @@ async function renderUserDetail(userName, filteredSessions = null, filterKey = '
                     }
                 });
             });
-            const recentGames = allGamesList.slice(-5);
+            const recentGames = allGamesList; // フィルター済み全件を使用（スコアカードと一致させる）
             if (recentGames.length > 0) {
                 // 初期値0を除外したいため、配列は空にしてポイントを積み上げる
                 points = [];
@@ -1609,12 +1613,16 @@ async function renderUserDetail(userName, filteredSessions = null, filterKey = '
                 labelText = `直近${recentGames.length}半荘のスコア遷移`;
             }
         } else {
-            // セッション(セット)単位で取得
-            if (chronological.length >= 2) {
+            // セッション(セット)単位で取得（Mapを使わず直接計算してスコアカードと一致させる）
+            if (chronological.length >= 1) {
                 points = [];
                 let currentTotal = 0;
                 chronological.forEach(session => {
-                    const sessionScore = sessionScores.get(session.id) || 0;
+                    let sessionScore = 0;
+                    (session.games || []).forEach(game => {
+                        const p = game.players ? game.players.find(x => x.name === userName) : null;
+                        if (p) sessionScore += p.finalScore;
+                    });
                     currentTotal += sessionScore;
                     points.push(parseFloat(currentTotal.toFixed(1)));
                 });
@@ -1625,20 +1633,21 @@ async function renderUserDetail(userName, filteredSessions = null, filterKey = '
         if (points.length >= 2) {
             // SVGのサイズ
             const svgW = 280;
-            const svgH = 70;
+            const svgH = 90;        // ラベルエリア分サイズを拡張
             const padX = 24;
-            const padY = 10;
+            const padY = 6;
+            const labelAreaH = 20;  // 上部にラベル専用エリアを確保
             const chartW = svgW - padX * 2;
-            const chartH = svgH - padY * 2;
+            const chartH = svgH - padY * 2 - labelAreaH; // ラベルエリア公发
 
             // 0 のラインも必ずグラフ領域に収めるように min / max に 0 を含める
             const minVal = Math.min(0, ...points);
             const maxVal = Math.max(0, ...points);
             const range = maxVal - minVal || 1;
 
-            // 座標変換関数
+            // 座標変換関数（クラシックエリアは labelAreaH 下に）
             const toX = i => padX + (i / (points.length - 1)) * chartW;
-            const toY = v => padY + chartH - ((v - minVal) / range) * chartH;
+            const toY = v => labelAreaH + padY + chartH - ((v - minVal) / range) * chartH;
 
             // 0ラインのY座標
             const zeroY = toY(0);
@@ -1654,24 +1663,71 @@ async function renderUserDetail(userName, filteredSessions = null, filterKey = '
             const lineColor = 'rgba(255,255,255,0.95)';
             const fillColor = 'rgba(255,255,255,0.15)';
 
-            // ドット＆ラベル生成（全ポイントに各セットのスコアを表示）
+            // 最大値・最小値・最終値のインデックス
+            const maxIndex = points.indexOf(Math.max(...points));
+            const minIndex = points.indexOf(Math.min(...points));
+            const lastIndex = points.length - 1;
+
+            // 表示するラベルを優先度順に確定（近すぎる場合は低優先を省略）
+            const MIN_LABEL_DIST = 42; // ラベル間の最小X距離（px）
+            const candidates = [
+                { idx: lastIndex, priority: 3 }, // 最終値（最高優先）
+                { idx: maxIndex, priority: 2 }, // 最大値
+                { idx: minIndex, priority: 1 }, // 最小値
+            ];
+            // 同じインデックスが重複する候補を除外（例：最大値=最終値のとき）
+            const unique = candidates.filter(
+                (c, i, arr) => arr.findIndex(x => x.idx === c.idx) === i
+            );
+            const confirmedLabels = new Set();
+            unique.sort((a, b) => b.priority - a.priority).forEach(c => {
+                const cx = toX(c.idx);
+                const tooClose = [...confirmedLabels].some(
+                    fi => Math.abs(toX(fi) - cx) < MIN_LABEL_DIST
+                );
+                if (!tooClose) confirmedLabels.add(c.idx);
+            });
+
             let dotLabels = '';
             points.forEach((v, i) => {
                 const x = toX(i);
                 const y = toY(v);
                 const labelColor = 'rgba(255,255,255,0.9)';
 
-                // ラベルのテキスト: 各ポイントの累計スコアを表示
+                // 最大値・最小値・最終値のみラベルを表示（重複回避済み）
+                const showLabel = confirmedLabels.has(i);
+
                 const sign = v > 0 ? '+' : '';
                 const labelText = `${sign}${v}`;
 
-                // テキスト位置: 最初はstart、最後はend、中間はmiddle
-                const textAnchor = i === 0 ? 'start' : (i === points.length - 1 ? 'end' : 'middle');
-                const labelX = i === 0 ? x + 2 : (i === points.length - 1 ? x - 2 : x);
-                // 上端に近い場合は下方向、それ以外は線から十分離して上方向に配置
-                const labelY = y <= padY + 16 ? y + 18 : y - 14;
-                dotLabels += `<text x="${labelX}" y="${labelY}" text-anchor="${textAnchor}" font-size="9" fill="${labelColor}" font-weight="bold">${labelText}</text>`;
-                dotLabels += `<circle cx="${x}" cy="${y}" r="3" fill="rgba(255,255,255,0.9)" stroke="rgba(255,255,255,0.4)" stroke-width="1.5"/>`;
+                // ラベルは常にドット中心でセンタリング
+                const textAnchor = 'middle';
+                const labelX = x;
+
+
+                if (showLabel) {
+                    // 文字幅を近似してボックスサイズを計算（1文字≈5.5px）
+                    const charWidth = 5.5;
+                    const boxPad = 3;
+                    const textW = labelText.length * charWidth + boxPad * 2;
+                    const textH = 13;
+                    // ラベルは常にラベルエリア内(グラフ線の上)に固定配置
+                    const lY = labelAreaH - 3;
+                    // ボックスX: 中央配置、SVG端でクランプ
+                    const boxX = Math.max(0, Math.min(svgW - textW, x - textW / 2));
+                    const centeredTextX = boxX + textW / 2;
+                    // コネクター線（ラベルボックス底面からドットまで）
+                    const connectorTop = lY + 2;
+                    const connectorBot = y - 6;
+                    if (connectorTop < connectorBot) {
+                        dotLabels += `<line x1="${x}" y1="${connectorTop}" x2="${x}" y2="${connectorBot}" stroke="rgba(255,255,255,0.5)" stroke-width="1" stroke-dasharray="2,1"/>`;
+                    }
+                    // 背景ボックス（半透明黒）→ 前景テキスト（白）の順で描画
+                    dotLabels += `<rect x="${boxX}" y="${lY - textH + 2}" width="${textW}" height="${textH}" rx="3" fill="rgba(0,0,0,0.5)"/>`;
+                    dotLabels += `<text x="${centeredTextX}" y="${lY}" text-anchor="middle" font-size="9" fill="rgba(255,255,255,0.95)" font-weight="bold">${labelText}</text>`;
+                }
+                // ラベルありは大きめの目立つ白丸、なしは小さい山
+                dotLabels += `<circle cx="${x}" cy="${y}" r="${showLabel ? 5 : 2}" fill="rgba(255,255,255,${showLabel ? 1 : 0.7})" stroke="rgba(255,255,255,0.4)" stroke-width="${showLabel ? 2 : 0}"/>`;
             });
 
 
