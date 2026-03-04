@@ -1,4 +1,4 @@
-const CACHE_NAME = 'mahjong-score-app-v202603040951';
+const CACHE_NAME = 'mahjong-score-app-v202603041032';
 const ASSETS_TO_CACHE = [
     './',
     './index.html',
@@ -8,8 +8,11 @@ const ASSETS_TO_CACHE = [
     './js/storage.js',
     './js/league.js',
     './manifest.json',
-    'https://cdn.jsdelivr.net/npm/chart.js',
-    'https://cdn-icons-png.flaticon.com/512/806/806057.png'
+    './images/pwa-icon-512.png',
+    './images/pwa-icon-192.png',
+    './images/app-icon.png',
+    './images/icon.png',
+    'https://cdn.jsdelivr.net/npm/chart.js'
 ];
 
 // Install Event
