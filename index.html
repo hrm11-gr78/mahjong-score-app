@@ -155,7 +155,7 @@
                         <label>対局者 (4名)</label>
                         <div class="score-grid">
                             <div class="player-select-wrapper" id="p1-wrapper">
-                                <select name="p1" class="user-select" required>
+                                <select id="p1-select" name="p1" class="user-select" required>
                                     <option value="" disabled selected>選択...</option>
                                 </select>
                                 <input type="text" name="p1_custom" class="user-input-custom" placeholder="名前..."
@@ -164,7 +164,7 @@
                                     title="手動入力切替">🖊️</button>
                             </div>
                             <div class="player-select-wrapper" id="p2-wrapper">
-                                <select name="p2" class="user-select" required>
+                                <select id="p2-select" name="p2" class="user-select" required>
                                     <option value="" disabled selected>選択...</option>
                                 </select>
                                 <input type="text" name="p2_custom" class="user-input-custom" placeholder="名前..."
@@ -173,7 +173,7 @@
                                     title="手動入力切替">🖊️</button>
                             </div>
                             <div class="player-select-wrapper" id="p3-wrapper">
-                                <select name="p3" class="user-select" required>
+                                <select id="p3-select" name="p3" class="user-select" required>
                                     <option value="" disabled selected>選択...</option>
                                 </select>
                                 <input type="text" name="p3_custom" class="user-input-custom" placeholder="名前..."
@@ -182,7 +182,7 @@
                                     title="手動入力切替">🖊️</button>
                             </div>
                             <div class="player-select-wrapper" id="p4-wrapper">
-                                <select name="p4" class="user-select" required>
+                                <select id="p4-select" name="p4" class="user-select" required>
                                     <option value="" disabled selected>選択...</option>
                                 </select>
                                 <input type="text" name="p4_custom" class="user-input-custom" placeholder="名前..."
@@ -455,7 +455,7 @@
                 </div>
                 <button id="add-user-btn" class="btn-primary" style="margin-bottom: 20px;">ユーザー追加</button>
 
-                <h3>登録ユーザー</h3>
+                <!-- 自分・マイメンバー・管理UIはJS側で動的に挿入 -->
                 <ul id="user-list" class="user-list">
                     <!-- Users will be injected here -->
                 </ul>
