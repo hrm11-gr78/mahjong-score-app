@@ -766,3 +766,77 @@ window.AppStorage.deleteImage = async function (pathOrUrl) {
         return false;
     }
 };
+
+// --- マイメンバー ---
+
+/**
+ * 指定ユーザーのマイメンバーリストを取得する
+ * @param {string} userName - 自分のユーザー名
+ * @returns {string[]} マイメンバーのユーザー名配列
+ */
+window.AppStorage.getMyMembers = async function (userName) {
+    if (!userName) return [];
+    try {
+        const doc = await db.collection("users").doc(userName).get();
+        if (doc.exists) {
+            return doc.data().myMembers || [];
+        }
+        return [];
+    } catch (e) {
+        console.error("getMyMembers failed:", e);
+        return [];
+    }
+};
+
+/**
+ * マイメンバーにユーザーを追加する（重複は無視）
+ * @param {string} userName - 自分のユーザー名
+ * @param {string} targetName - 追加するユーザー名
+ * @returns {boolean} 成功したかどうか
+ */
+window.AppStorage.addMyMember = async function (userName, targetName) {
+    if (!userName || !targetName || userName === targetName) return false;
+    try {
+        await db.collection("users").doc(userName).set(
+            { myMembers: firebase.firestore.FieldValue.arrayUnion(targetName) },
+            { merge: true }
+        );
+        return true;
+    } catch (e) {
+        console.error("addMyMember failed:", e);
+        return false;
+    }
+};
+
+/**
+ * マイメンバーからユーザーを解除する
+ * @param {string} userName - 自分のユーザー名
+ * @param {string} targetName - 解除するユーザー名
+ * @returns {boolean} 成功したかどうか
+ */
+window.AppStorage.removeMyMember = async function (userName, targetName) {
+    if (!userName || !targetName) return false;
+    try {
+        await db.collection("users").doc(userName).update({
+            myMembers: firebase.firestore.FieldValue.arrayRemove(targetName)
+        });
+        return true;
+    } catch (e) {
+        console.error("removeMyMember failed:", e);
+        return false;
+    }
+};
+
+/**
+ * セッション参加者を自動的にマイメンバーへ追加する
+ * 自分以外の参加者全員をマイメンバーに追加する
+ * @param {string} deviceUser - デバイスユーザー名（自分）
+ * @param {string[]} playerNames - セッション参加者の名前配列
+ */
+window.AppStorage.autoAddMembersFromSession = async function (deviceUser, playerNames) {
+    if (!deviceUser || !Array.isArray(playerNames)) return;
+    const targets = playerNames.filter(name => name && name !== deviceUser);
+    for (const target of targets) {
+        await window.AppStorage.addMyMember(deviceUser, target);
+    }
+};

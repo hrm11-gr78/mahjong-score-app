@@ -575,17 +575,21 @@ async function renderUserOptions() {
     const allUsers = await window.AppStorage.getUsers();
 
     // For the User Link Screen, we only want unlinked users
-    // optimization: only fetch this if we are likely to need it (or just fetch always for simplicity)
     const unlinkedUsers = await window.AppStorage.getUnlinkedUsers();
 
+    // デバイスユーザーのマイメンバーを取得
+    const deviceUser = localStorage.getItem('deviceUser');
+    const myMembers = deviceUser ? await window.AppStorage.getMyMembers(deviceUser) : [];
+
     // Update all user-select dropdowns (Game Setup & Settings)
-    // We target .user-select class.
     const selects = document.querySelectorAll('.user-select');
 
     selects.forEach(select => {
         const currentVal = select.value;
         const isLinkUserSelect = select.id === 'link-user-select';
         const isProfileUserSelect = select.id === 'profile-user-select';
+        // プレイヤー選択セレクト（p1〜p4）か判定
+        const isPlayerSelect = /^p[1-4]-select$/.test(select.id);
 
         // Choose which list to use
         const userSource = isLinkUserSelect ? unlinkedUsers : allUsers;
@@ -597,12 +601,44 @@ async function renderUserOptions() {
             select.innerHTML = '<option value="" disabled selected>選択...</option>';
         }
 
-        userSource.forEach(user => {
-            const option = document.createElement('option');
-            option.value = user;
-            option.textContent = user;
-            select.appendChild(option);
-        });
+        if (isPlayerSelect && myMembers.length > 0) {
+            // マイメンバー + 自分を上位グループに、残りを下位グループに分ける
+            const prioritySet = new Set([...myMembers, ...(deviceUser ? [deviceUser] : [])]);
+            const priorityUsers = userSource.filter(u => prioritySet.has(u));
+            const otherUsers = userSource.filter(u => !prioritySet.has(u));
+
+            if (priorityUsers.length > 0) {
+                const groupA = document.createElement('optgroup');
+                groupA.label = 'マイメンバー';
+                priorityUsers.forEach(user => {
+                    const opt = document.createElement('option');
+                    opt.value = user;
+                    opt.textContent = user;
+                    groupA.appendChild(opt);
+                });
+                select.appendChild(groupA);
+            }
+
+            if (otherUsers.length > 0) {
+                const groupB = document.createElement('optgroup');
+                groupB.label = 'その他';
+                otherUsers.forEach(user => {
+                    const opt = document.createElement('option');
+                    opt.value = user;
+                    opt.textContent = user;
+                    groupB.appendChild(opt);
+                });
+                select.appendChild(groupB);
+            }
+        } else {
+            // 通常表示
+            userSource.forEach(user => {
+                const option = document.createElement('option');
+                option.value = user;
+                option.textContent = user;
+                select.appendChild(option);
+            });
+        }
 
         // Restore value if still valid in the new list
         if (currentVal && userSource.includes(currentVal)) {
@@ -619,6 +655,7 @@ async function renderUserOptions() {
         }
     }
 }
+
 
 // Header League Button Listener
 const headerLeagueBtn = document.getElementById('header-league-btn');
@@ -977,20 +1014,171 @@ function showToast(message, duration = 3000) {
     }, duration);
 }
 
+// --- マイメンバー管理UI ---
+
+/**
+ * ユーザー一覧画面にマイメンバー管理セクションを描画する
+ * @param {string} deviceUser - デバイスユーザー名
+ * @param {string[]} allUsers - 全ユーザー名の配列
+ */
+async function renderMyMemberSection(deviceUser, allUsers) {
+    // マイメンバーセクションの取得または作成
+    let section = document.getElementById('my-member-section');
+    if (!section) {
+        section = document.createElement('div');
+        section.id = 'my-member-section';
+    }
+    // 毎回 userList の直後に配置（既存要素でも正しい位置に移動）
+    if (userList && userList.parentNode) {
+        userList.parentNode.insertBefore(section, userList.nextSibling);
+    }
+
+    // デバイスユーザー未設定の場合は非表示
+    if (!deviceUser) {
+        section.innerHTML = '';
+        return;
+    }
+
+    const myMembers = await window.AppStorage.getMyMembers(deviceUser);
+
+    // 追加可能なユーザー（自分・既存マイメンバー以外）
+    const candidates = allUsers.filter(u => u !== deviceUser && !myMembers.includes(u));
+
+    // HTMLを構築
+    section.innerHTML = `
+        <div style="background:#1e293b; border:1px solid #334155; border-radius:10px; padding:16px; margin-top:20px;">
+            <h3 style="color:#e2e8f0; font-size:1rem; margin:0 0 14px 0; display:flex; align-items:center; gap:8px;">
+                👥 マイメンバー管理
+                <span style="font-size:0.75rem; color:#94a3b8; font-weight:normal;">(${myMembers.length}人登録中)</span>
+            </h3>
+
+            <!-- 追加フォーム -->
+            <div style="margin-bottom:10px;">
+                <div style="font-size:0.8rem; color:#94a3b8; margin-bottom:6px;">メンバーを追加</div>
+                <div style="display:flex; gap:8px; align-items:center;">
+                    <div style="flex:1; min-width:0;">
+                        <input
+                            id="my-member-add-input"
+                            type="text"
+                            placeholder="ユーザー名を入力..."
+                            list="my-member-add-candidates"
+                            style="width:100%; box-sizing:border-box; padding:8px 12px; background:#0f172a; border:1px solid #475569; border-radius:8px; color:#e2e8f0; font-size:0.9rem;"
+                            autocomplete="off"
+                        />
+                        <datalist id="my-member-add-candidates">
+                            ${candidates.map(name => `<option value="${name}">`).join('')}
+                        </datalist>
+                    </div>
+                    <button
+                        id="my-member-add-btn"
+                        style="padding:8px 16px; background:linear-gradient(135deg,#6366f1,#8b5cf6); color:white; border:none; border-radius:8px; cursor:pointer; font-size:0.9rem; white-space:nowrap; flex-shrink:0;"
+                    >追加</button>
+                </div>
+            </div>
+
+            <!-- 解除フォーム（登録中メンバーがいる場合のみ表示） -->
+            ${myMembers.length > 0 ? `
+            <div>
+                <div style="font-size:0.8rem; color:#94a3b8; margin-bottom:6px;">メンバーを解除</div>
+                <div style="display:flex; gap:8px; align-items:center;">
+                    <div style="flex:1; min-width:0;">
+                        <input
+                            id="my-member-remove-input"
+                            type="text"
+                            placeholder="解除するユーザー名を入力..."
+                            list="my-member-remove-candidates"
+                            style="width:100%; box-sizing:border-box; padding:8px 12px; background:#0f172a; border:1px solid #ef4444; border-radius:8px; color:#e2e8f0; font-size:0.9rem;"
+                            autocomplete="off"
+                        />
+                        <datalist id="my-member-remove-candidates">
+                            ${myMembers.map(name => `<option value="${name}">`).join('')}
+                        </datalist>
+                    </div>
+                    <button
+                        id="my-member-remove-btn"
+                        style="padding:8px 16px; background:#7f1d1d; color:#fca5a5; border:1px solid #ef4444; border-radius:8px; cursor:pointer; font-size:0.9rem; white-space:nowrap; flex-shrink:0;"
+                    >解除</button>
+                </div>
+            </div>
+            ` : ''}
+        </div>
+    `;
+
+    // 「追加」ボタンのイベント
+    const addBtn = document.getElementById('my-member-add-btn');
+    const addInput = document.getElementById('my-member-add-input');
+    if (addBtn && addInput) {
+        const doAdd = async () => {
+            const targetName = addInput.value.trim();
+            if (!targetName) { showToast('ユーザー名を入力してください'); return; }
+            if (targetName === deviceUser) { showToast('自分自身は追加できません'); return; }
+            if (myMembers.includes(targetName)) { showToast(`「${targetName}」はすでにマイメンバーです`); return; }
+            if (!allUsers.includes(targetName)) { showToast(`「${targetName}」というユーザーは見つかりません`); return; }
+            const success = await window.AppStorage.addMyMember(deviceUser, targetName);
+            if (success) {
+                addInput.value = '';
+                showToast(`「${targetName}」をマイメンバーに追加しました`);
+                // ユーザー一覧とセット作成フォームの両方を更新
+                await Promise.all([renderUserList(), renderUserOptions()]);
+            } else {
+                showToast('追加に失敗しました');
+            }
+        };
+        addBtn.addEventListener('click', doAdd);
+        addInput.addEventListener('keydown', e => { if (e.key === 'Enter') doAdd(); });
+    }
+
+    // 「解除」ボタンのイベント
+    const removeBtn = document.getElementById('my-member-remove-btn');
+    const removeInput = document.getElementById('my-member-remove-input');
+    if (removeBtn && removeInput) {
+        const doRemove = async () => {
+            const targetName = removeInput.value.trim();
+            if (!targetName) { showToast('解除するユーザー名を入力してください'); return; }
+            if (!myMembers.includes(targetName)) { showToast(`「${targetName}」はマイメンバーに登録されていません`); return; }
+            if (confirm(`「${targetName}」をマイメンバーから解除しますか？`)) {
+                await window.AppStorage.removeMyMember(deviceUser, targetName);
+                showToast(`「${targetName}」をマイメンバーから解除しました`);
+                await Promise.all([renderUserList(), renderUserOptions()]);
+            }
+        };
+        removeBtn.addEventListener('click', doRemove);
+        removeInput.addEventListener('keydown', e => { if (e.key === 'Enter') doRemove(); });
+    }
+}
+
 async function renderUserList() {
     if (!userList) return;
 
     // Fetch users with details AND all sessions for stats calculation
     // Note: We don't need getUsersWithDetails anymore since manual titles are removed.
     // But we need sessions to calculate titles.
-    const [users, sessions] = await Promise.all([
-        window.AppStorage.getUsers(), // Revert to simple list or ignore details
+    const [allUsers, sessions] = await Promise.all([
+        window.AppStorage.getUsers(),
         window.AppStorage.getSessions()
     ]);
 
     // Get Device User
     const deviceUser = localStorage.getItem('deviceUser');
     const isAdmin = deviceUser === 'ヒロム';
+
+    // マイメンバーフィルタリング: 管理者は全員表示、一般ユーザーは自分+マイメンバーのみ
+    let myMembers = [];
+    let users = allUsers;
+    if (!isAdmin && deviceUser) {
+        myMembers = await window.AppStorage.getMyMembers(deviceUser);
+        const visibleNames = new Set([deviceUser, ...myMembers]);
+        users = allUsers.filter(u => visibleNames.has(u));
+        // 表示順: 自分を先頭、次にマイメンバーの順
+        users.sort((a, b) => {
+            if (a === deviceUser) return -1;
+            if (b === deviceUser) return 1;
+            return 0; // マイメンバー間は登録順を維持
+        });
+    } else if (!deviceUser) {
+        // デバイスユーザー未設定は自分を特定できないので全員非表示
+        users = [];
+    }
 
     // Toggle Add User Form Visibility
     const addUserSection = document.getElementById('add-user-section');
@@ -1008,9 +1196,98 @@ async function renderUserList() {
         }
     }
 
+    // 自分をユーザーリストから除外（別セクションで表示するため）
+    const usersWithoutSelf = users.filter(u => u !== deviceUser);
+
+    // ---- 自分専用セクション ----
+    // 自分を登録ユーザー一覧から分離して、専用セクションに表示する
+    const selfSectionId = 'self-user-section';
+    let selfSection = document.getElementById(selfSectionId);
+    if (!selfSection) {
+        selfSection = document.createElement('div');
+        selfSection.id = selfSectionId;
+        if (userList && userList.parentNode) {
+            userList.parentNode.insertBefore(selfSection, userList);
+        }
+    }
+
+    if (deviceUser && allUsers.includes(deviceUser)) {
+        const selfStats = await getUserStats(deviceUser, sessions);
+        const selfGameCount = selfStats ? selfStats.gameCount : 0;
+        const selfTotalScore = selfStats ? selfStats.totalScore : 0;
+        const selfAvgRank = selfStats && selfStats.avgRank > 0 ? selfStats.avgRank.toFixed(2) : '-';
+        const selfScoreClass = selfTotalScore >= 0 ? 'score-positive' : 'score-negative';
+        const selfScoreStr = selfTotalScore > 0 ? `+${parseFloat(selfTotalScore.toFixed(1))}` : `${parseFloat(selfTotalScore.toFixed(1))}`;
+
+        const selfTitles = await calculateUserTitles(deviceUser, sessions);
+        const rankPriority2 = { gold: 4, silver: 3, bronze: 2, special: 2, shame: 1 };
+        const bestByCategory2 = new Map();
+        selfTitles.forEach(t => {
+            const prev = bestByCategory2.get(t.category);
+            if (!prev || (rankPriority2[t.rank] ?? 0) > (rankPriority2[prev.rank] ?? 0)) {
+                bestByCategory2.set(t.category, t);
+            }
+        });
+        const selfTitleIcons = Array.from(bestByCategory2.values()).map(t =>
+            `<span class="title-icon" data-name="${t.name}" data-desc="${t.description}" style="margin-right:2px; cursor:pointer;" title="${t.name}\n${t.description}">${t.icon}</span>`
+        ).join('');
+
+        const selfScoreColor = selfTotalScore > 0 ? '#4ade80' : (selfTotalScore < 0 ? '#f87171' : '#94a3b8');
+        const selfScoreSign = selfTotalScore > 0 ? '+' : '';
+
+        // マイメンバーがいる場合のみ「登録ユーザー」見出しを表示
+        const hasMemberSection = usersWithoutSelf.length > 0;
+
+        selfSection.innerHTML = `
+            <!-- 自分セクション -->
+            <div style="margin-bottom:16px;">
+                <div style="font-size:0.75rem; color:#94a3b8; text-transform:uppercase; letter-spacing:1px; margin-bottom:8px; padding-left:2px;">マイアカウント</div>
+                <ul style="list-style:none; padding:0; margin:0;">
+                    <li style="background:#1e293b; border:1px solid #334155; border-radius:10px; padding:14px 16px; display:flex; justify-content:space-between; align-items:center; width:100%;">
+                        <div class="user-info-area" style="display:flex; align-items:center; gap:8px; flex:1; min-width:0;">
+                            <span class="user-name-link" data-user="${deviceUser}" style="cursor:pointer; text-decoration:underline; font-size:1.0rem; font-weight:bold; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${deviceUser}</span>
+                            <div style="display:flex; align-items:center; flex-shrink:0;">
+                                ${selfTitleIcons ? `<div style="font-size:1.0rem;">${selfTitleIcons}</div>` : ''}
+                            </div>
+                        </div>
+                        <div style="display:flex; align-items:center; gap:10px; flex-shrink:0;">
+                            <div class="user-stats-box">
+                                <span class="stat-item user-game-count">${selfGameCount}戦</span>
+                                <div class="stat-separator"></div>
+                                <span class="stat-item user-total-score" style="color:${selfScoreColor}; font-weight:bold;">${selfScoreSign}${selfTotalScore}</span>
+                                <div class="stat-separator"></div>
+                                <span class="stat-item user-avg-rank">Avg <span style="color:#e2e8f0;">${selfAvgRank}</span></span>
+                            </div>
+                        </div>
+                    </li>
+                </ul>
+            </div>
+
+            <!-- 区切り（マイメンバーがいる場合） -->
+            ${hasMemberSection ? `
+            <div style="position:relative; text-align:center; margin:20px 0 14px;">
+                <hr style="border:none; border-top:1px solid #334155; margin:0; position:absolute; top:50%; width:100%; z-index:1;">
+                <span style="background:var(--bg-color, #0f172a); padding:0 12px; color:#64748b; font-size:0.7rem; font-weight:bold; letter-spacing:2px; position:relative; z-index:2;">登録ユーザー</span>
+            </div>
+            ` : ''}
+        `;
+
+        // クリックで詳細へ
+        selfSection.querySelector('.user-name-link').addEventListener('click', () => openUserDetail(deviceUser));
+        // タイトルアイコンのツールチップ
+        selfSection.querySelectorAll('.title-icon').forEach(icon => {
+            icon.addEventListener('click', (e) => {
+                e.stopPropagation();
+                showToast(`【${icon.dataset.name}】\n${icon.dataset.desc}`);
+            });
+        });
+    } else {
+        selfSection.innerHTML = '';
+    }
+
     userList.innerHTML = '';
 
-    const listItems = await Promise.all(users.map(async user => {
+    const listItems = await Promise.all(usersWithoutSelf.map(async user => {
         // Calculate Stats using helper
         const stats = await getUserStats(user, sessions);
         const gameCount = stats ? stats.gameCount : 0;
@@ -1087,6 +1364,10 @@ async function renderUserList() {
     }));
 
     listItems.forEach(li => userList.appendChild(li));
+
+    // ユーザー一覧描画後にマイメンバー管理UIを描画
+    // 表示順: 自分 → マイメンバー → マイメンバー管理
+    await renderMyMemberSection(deviceUser, allUsers);
 
     userList.querySelectorAll('.btn-danger').forEach(btn => {
         btn.addEventListener('click', async (e) => {
@@ -1529,10 +1810,9 @@ async function renderUserDetail(userName, filteredSessions = null, filterKey = '
         });
 
         const currentDeviceUser = localStorage.getItem('deviceUser');
-        const isParticipantOrAdmin = currentDeviceUser === 'ヒロム' || (Array.isArray(session.players) && session.players.includes(currentDeviceUser));
-
-        const rowStyle = isParticipantOrAdmin ? 'style="cursor:pointer;"' : '';
-        const rowAction = isParticipantOrAdmin ? `onclick="openSession(${session.id})"` : '';
+        // セッション詳細はopenSession内で閲覧権限を制御するため、常にクリック可能にする
+        const rowStyle = 'style="cursor:pointer;"';
+        const rowAction = `onclick="openSession(${session.id})"`;
 
         html += `
             <tr ${rowStyle} ${rowAction}>
@@ -2179,6 +2459,18 @@ if (sessionSetupForm) {
 
         const session = await window.AppStorage.createSession(getDate, players, rules);
 
+        // セッション参加者を自動的にマイメンバーへ追加し、UIを即時更新
+        try {
+            const currentDeviceUser = localStorage.getItem('deviceUser');
+            if (currentDeviceUser) {
+                await window.AppStorage.autoAddMembersFromSession(currentDeviceUser, players);
+                // マイメンバーが更新されたのでユーザー一覧とセット作成フォームを即時反映
+                await Promise.all([renderUserList(), renderUserOptions()]);
+            }
+        } catch (e) {
+            console.error("マイメンバー自動追加エラー:", e);
+        }
+
         // Auto-link to League
         try {
             if (window.AppStorage.getLeagues) {
@@ -2315,16 +2607,26 @@ async function openSession(sessionId) {
 
     if (sessionTitle) sessionTitle.textContent = `${session.date}`;
 
+    // 閲覧者が参加者か管理者かを判定
+    const viewerUser = localStorage.getItem('deviceUser');
+    const isAdmin = viewerUser === 'ヒロム';
+    const isParticipant = Array.isArray(session.players) && session.players.includes(viewerUser);
+    const canEdit = isAdmin || isParticipant;
+
     // Rate Select Lock
     if (sessionRateSelect) {
         sessionRateSelect.value = session.rate || 0;
-        sessionRateSelect.disabled = !!session.locked;
+        sessionRateSelect.disabled = !canEdit || !!session.locked;
     }
 
-
-
-    // Finish/Resume Button
-    renderSessionControls(session);
+    // Finish/Resume Button（参加者・管理者のみ表示）
+    if (canEdit) {
+        renderSessionControls(session);
+    } else {
+        // 閲覧専用：コントロールエリアを非表示
+        const controlsDiv = document.getElementById('session-controls-area');
+        if (controlsDiv) controlsDiv.innerHTML = '';
+    }
 
     await renderSessionTotal(session);
     renderScoreChart(session);
@@ -2337,12 +2639,16 @@ async function openSession(sessionId) {
         if (!settDiv) {
             settDiv = document.createElement('div');
             settDiv.id = 'settlement-area';
-            // Insert at the end, but before any padding? 
-            // Usually just appendChild is fine
             container.appendChild(settDiv);
         }
-        if (window.Settlement) {
+        if (canEdit && window.Settlement) {
+            // 参加者・管理者のみ割り勘を表示
+            settDiv.style.display = '';
             window.Settlement.render(session, settDiv);
+        } else if (!canEdit) {
+            // 閲覧専用：割り勘エリアを非表示
+            settDiv.innerHTML = '';
+            settDiv.style.display = 'none';
         }
     }
 
@@ -2351,16 +2657,22 @@ async function openSession(sessionId) {
     // Add Game Button Lock (Apply AFTER navigation so it overrides default visibility)
     const newGameBtn = document.getElementById('new-game-btn');
     if (newGameBtn) {
-        if (session.locked) {
+        if (!canEdit) {
+            // 閲覧専用モード：対局追加ボタンを非表示
+            newGameBtn.style.display = 'none';
+            newGameBtn.disabled = true;
+        } else if (session.locked) {
+            newGameBtn.style.display = '';
             newGameBtn.disabled = true;
             newGameBtn.innerHTML = "🔒 セットはロックされています";
-            newGameBtn.style.backgroundColor = "#475569"; // Slate-600
+            newGameBtn.style.backgroundColor = "#475569";
             newGameBtn.style.cursor = "not-allowed";
             newGameBtn.style.opacity = "0.7";
         } else {
+            newGameBtn.style.display = '';
             newGameBtn.disabled = false;
             newGameBtn.innerHTML = "+ 対局を追加";
-            newGameBtn.style.backgroundColor = ""; // Reset
+            newGameBtn.style.backgroundColor = "";
             newGameBtn.style.cursor = "";
             newGameBtn.style.opacity = "";
         }
