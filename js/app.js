@@ -1014,6 +1014,37 @@ function showToast(message, duration = 3000) {
     }, duration);
 }
 
+/**
+ * ボタンのローディング状態を切り替えるユーティリティ
+ * @param {HTMLElement} btn - 対象ボタン
+ * @param {boolean} isLoading - trueで処理中状態、falseで元に戻す
+ * @param {string} [loadingText='処理中...'] - 処理中に表示するテキスト
+ */
+function setButtonLoading(btn, isLoading, loadingText = '処理中...') {
+    if (!btn) return;
+    if (isLoading) {
+        btn.dataset.originalText = btn.innerHTML;
+        btn.innerHTML = `<span style="display:inline-flex;align-items:center;gap:6px;">
+            <span style="width:14px;height:14px;border:2px solid rgba(255,255,255,0.4);border-top-color:#fff;border-radius:50%;display:inline-block;animation:btn-spin 0.6s linear infinite;flex-shrink:0;"></span>
+            ${loadingText}
+        </span>`;
+        btn.disabled = true;
+        btn.style.opacity = '0.8';
+    } else {
+        btn.innerHTML = btn.dataset.originalText || btn.innerHTML;
+        btn.disabled = false;
+        btn.style.opacity = '';
+    }
+}
+
+// ボタンスピナー用CSSキーフレームを動的に追加（重複防止）
+if (!document.getElementById('btn-spin-style')) {
+    const btnSpinStyle = document.createElement('style');
+    btnSpinStyle.id = 'btn-spin-style';
+    btnSpinStyle.textContent = '@keyframes btn-spin { to { transform: rotate(360deg); } }';
+    document.head.appendChild(btnSpinStyle);
+}
+
 // --- マイメンバー管理UI ---
 
 /**
@@ -2389,20 +2420,25 @@ if (addUserBtn) {
     addUserBtn.addEventListener('click', async () => {
         const name = newUserNameInput.value.trim();
         if (name) {
-            // Check limit
-            const currentUsers = await window.AppStorage.getUsers();
-            if (currentUsers.length >= 30) {
-                alert('ユーザー登録数の上限（30名）に達しました。');
-                return;
-            }
+            setButtonLoading(addUserBtn, true, 'ユーザー追加中...');
+            try {
+                // Check limit
+                const currentUsers = await window.AppStorage.getUsers();
+                if (currentUsers.length >= 30) {
+                    alert('ユーザー登録数の上限（30名）に達しました。');
+                    return;
+                }
 
-            if (await window.AppStorage.addUser(name)) {
-                newUserNameInput.value = '';
-                await renderUserOptions();
-                await renderUserList();
-                alert(`ユーザー "${name}" を追加しました！`);
-            } else {
-                alert('そのユーザーは既に存在します！');
+                if (await window.AppStorage.addUser(name)) {
+                    newUserNameInput.value = '';
+                    await renderUserOptions();
+                    await renderUserList();
+                    alert(`ユーザー "${name}" を追加しました！`);
+                } else {
+                    alert('そのユーザーは既に存在します！');
+                }
+            } finally {
+                setButtonLoading(addUserBtn, false);
             }
         }
     });
@@ -2457,42 +2493,51 @@ if (sessionSetupForm) {
             tieBreaker: document.querySelector('input[name="newSetTieBreaker"]:checked').value
         };
 
-        const session = await window.AppStorage.createSession(getDate, players, rules);
+        // バリデーション通過後にローディング開始
+        const submitBtn = document.getElementById('session-setup-submit-btn');
+        setButtonLoading(submitBtn, true, 'セット作成中...');
 
-        // セッション参加者を自動的にマイメンバーへ追加し、UIを即時更新
         try {
-            const currentDeviceUser = localStorage.getItem('deviceUser');
-            if (currentDeviceUser) {
-                await window.AppStorage.autoAddMembersFromSession(currentDeviceUser, players);
-                // マイメンバーが更新されたのでユーザー一覧とセット作成フォームを即時反映
-                await Promise.all([renderUserList(), renderUserOptions()]);
+            const session = await window.AppStorage.createSession(getDate, players, rules);
+
+            // セッション参加者を自動的にマイメンバーへ追加し、UIを即時更新
+            try {
+                const currentDeviceUser = localStorage.getItem('deviceUser');
+                if (currentDeviceUser) {
+                    await window.AppStorage.autoAddMembersFromSession(currentDeviceUser, players);
+                    // マイメンバーが更新されたのでユーザー一覧とセット作成フォームを即時反映
+                    await Promise.all([renderUserList(), renderUserOptions()]);
+                }
+            } catch (e) {
+                console.error("マイメンバー自動追加エラー:", e);
             }
-        } catch (e) {
-            console.error("マイメンバー自動追加エラー:", e);
-        }
 
-        // Auto-link to League
-        try {
-            if (window.AppStorage.getLeagues) {
-                const leagues = await window.AppStorage.getLeagues();
-                const activeLeague = leagues.find(l =>
-                    l.status === 'active' &&
-                    l.players.length >= 4 &&
-                    players.every(p => l.players.includes(p))
-                );
+            // Auto-link to League
+            try {
+                if (window.AppStorage.getLeagues) {
+                    const leagues = await window.AppStorage.getLeagues();
+                    const activeLeague = leagues.find(l =>
+                        l.status === 'active' &&
+                        l.players.length >= 4 &&
+                        players.every(p => l.players.includes(p))
+                    );
 
-                if (activeLeague) {
-                    await window.AppStorage.updateSession(session.id, { leagueId: activeLeague.id });
-                    if (typeof showToast === 'function') {
-                        showToast(`リーグ「${activeLeague.title}」の対局として記録しました。`);
+                    if (activeLeague) {
+                        await window.AppStorage.updateSession(session.id, { leagueId: activeLeague.id });
+                        if (typeof showToast === 'function') {
+                            showToast(`リーグ「${activeLeague.title}」の対局として記録しました。`);
+                        }
                     }
                 }
+            } catch (e) {
+                console.error("League link error:", e);
             }
-        } catch (e) {
-            console.error("League link error:", e);
-        }
 
-        await openSession(session.id);
+            await openSession(session.id);
+        } finally {
+            // 画面遷移後もボタン状態をリセット（再度homeに戻ったときのため）
+            setButtonLoading(submitBtn, false);
+        }
     });
 }
 
@@ -3210,6 +3255,10 @@ scoreForm.addEventListener('submit', async (e) => {
     const formData = new FormData(scoreForm);
     const session = await window.AppStorage.getSession(currentSessionId);
 
+    // バリデーション通過後にローディング開始
+    const scoreSubmitBtn = document.getElementById('score-submit-btn');
+    setButtonLoading(scoreSubmitBtn, true, '保存中...');
+
     // Gather scores and winds
     const playerScores = []; // Array of raw scores OR direct final scores
     const playerWinds = [];
@@ -3410,8 +3459,12 @@ scoreForm.addEventListener('submit', async (e) => {
         });
     }
 
-    // Save
-    await saveGameResult({ players: playersResult });
+    try {
+        // Save
+        await saveGameResult({ players: playersResult });
+    } finally {
+        setButtonLoading(scoreSubmitBtn, false);
+    }
 
     // Close modal/form
     navigateTo('session-detail');
