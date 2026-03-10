@@ -691,31 +691,14 @@ window.AppStorage.deleteLeague = async function (leagueId) {
     }
 };
 
-// --- Storage (Images) ---
+// --- 画像処理 (Base64方式) ---
+// Firebase Storageは使用せず、FileReaderでBase64変換して保存する
 window.AppStorage.uploadImage = async function (file, path, onProgress) {
-    if (!window.storage) {
-        console.error("Firebase Storage not initialized");
-        return null;
-    }
-
-    // Auth Check
-    const currentUser = firebase.auth().currentUser;
-    if (!currentUser) {
-        const errorMsg = "ログインしていません。アップロードにはログインが必要です。";
-        console.error(errorMsg);
-        alert(errorMsg); // Alert immediately to user
-        return null; // Or reject promise? The caller expects a promise usually.
-        // Actually, returning null will likely cause the caller (await uploadImage) to get null, 
-        // which might be handled or processed as "success with no URL".
-        // Better to throw error or let the caller verify.
-        // But for deep debugging, let's throw.
-        throw new Error(errorMsg);
-    }
     try {
         return new Promise((resolve, reject) => {
             const reader = new FileReader();
 
-            // Simulate progress for better UX
+            // プログレスバーをシミュレート（FileReaderにはprogress APIがあるが、UX向上のため疑似的に更新）
             let progress = 0;
             const progressInterval = setInterval(() => {
                 progress += 20;
@@ -727,44 +710,31 @@ window.AppStorage.uploadImage = async function (file, path, onProgress) {
             reader.onload = (e) => {
                 clearInterval(progressInterval);
                 if (onProgress) onProgress(100);
-                resolve(e.target.result); // Resolve with Base64 string
+                resolve(e.target.result); // Base64文字列を返す
             };
 
             reader.onerror = (e) => {
                 clearInterval(progressInterval);
-                reject(new Error("Failed to read file as Base64"));
+                reject(new Error("画像のBase64変換に失敗しました"));
             };
 
             reader.readAsDataURL(file);
         });
     } catch (e) {
-        console.error("Upload failed:", e);
+        console.error("uploadImage failed:", e);
         return null;
     }
 };
 
+// Base64方式では削除操作は不要（Firestoreのドキュメントごと削除されるため）
 window.AppStorage.deleteImage = async function (pathOrUrl) {
-    if (!window.storage) return false;
-
-    // Skip if it's a Base64 string (nothing to delete in storage)
-    if (pathOrUrl && pathOrUrl.startsWith('data:')) {
-        console.log("Skipping deletion for Base64 image");
+    // Base64文字列またはnullの場合は何もしない
+    if (!pathOrUrl || pathOrUrl.startsWith('data:')) {
         return true;
     }
-
-    try {
-        let imageRef;
-        if (pathOrUrl.startsWith('http')) {
-            imageRef = window.storage.refFromURL(pathOrUrl);
-        } else {
-            imageRef = window.storage.ref().child(pathOrUrl);
-        }
-        await imageRef.delete();
-        return true;
-    } catch (e) {
-        console.error("Delete image failed:", e);
-        return false;
-    }
+    // Firebase Storage URLが渡された場合も無視（現在はBase64方式のみ使用）
+    console.log("deleteImage: Base64方式のため削除操作をスキップ", pathOrUrl);
+    return true;
 };
 
 // --- マイメンバー ---
