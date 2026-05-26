@@ -11,7 +11,7 @@ Gitのセットアップが済んでいる場合は、以下のコマンドを�
 
 1. ターミナル（PowerShellなど）を開き、プロジェクトのフォルダに移動します。
    ```powershell
-   cd c:\Users\hirom\OneDrive\Desktop\麻雀スコア管理
+   cd c:\Users\hirom\OneDrive\Desktop\雀ログ
    ```
 
 2. 以下の3つのコマンドを順番に実行します。
