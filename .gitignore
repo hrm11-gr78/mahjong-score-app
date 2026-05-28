@@ -67,3 +67,9 @@ node_modules/
 
 # dataconnect generated files
 .dataconnect
+
+# Firestoreデータの手動バックアップ（PII含むためコミット禁止）
+backups/
+
+# プロジェクトローカルのMCP設定（個人パス含む）
+.mcp.json

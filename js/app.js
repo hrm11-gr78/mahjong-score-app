@@ -170,6 +170,30 @@ async function handleAuthStateChanged(user, linkedUser) {
 
 // --- Auth Event Listeners ---
 
+// Convert raw Firebase auth errors into safe Japanese messages.
+// Sign-in failures are deliberately collapsed into one generic message so
+// the UI never reveals whether an email is registered (account enumeration).
+function friendlyAuthError(rawError, context) {
+    const err = (rawError || '').toString();
+    const has = (code) => err.includes(code);
+
+    if (has('auth/invalid-credential') || has('auth/invalid-login-credentials') ||
+        has('auth/wrong-password') || has('auth/user-not-found')) {
+        return 'メールアドレスまたはパスワードが正しくありません。';
+    }
+    if (has('auth/invalid-email')) return 'メールアドレスの形式が正しくありません。';
+    if (has('auth/email-already-in-use')) return 'このメールアドレスは既に使用されています。ログインしてください。';
+    if (has('auth/weak-password')) return 'パスワードは6文字以上で設定してください。';
+    if (has('auth/too-many-requests')) return '試行回数が多すぎます。しばらく時間をおいて再度お試しください。';
+    if (has('auth/user-disabled')) return 'このアカウントは無効化されています。';
+    if (has('auth/network-request-failed')) return 'ネットワークに接続できませんでした。通信環境をご確認ください。';
+    if (has('auth/popup-closed-by-user') || has('auth/cancelled-popup-request')) return 'ログインがキャンセルされました。';
+
+    return context === 'signup'
+        ? '登録に失敗しました。しばらくしてから再度お試しください。'
+        : 'ログインに失敗しました。しばらくしてから再度お試しください。';
+}
+
 if (loginBtn) {
     loginBtn.addEventListener('click', async () => {
         const email = loginEmailInput.value;
@@ -181,7 +205,31 @@ if (loginBtn) {
 
         const result = await window.AppStorage.auth.signIn(email, password);
         if (!result.success) {
-            showError(loginError, "ログインに失敗しました: " + result.error);
+            showError(loginError, friendlyAuthError(result.error, 'login'));
+        }
+    });
+}
+
+const forgotPasswordBtn = document.getElementById('forgot-password');
+if (forgotPasswordBtn) {
+    forgotPasswordBtn.addEventListener('click', async () => {
+        const email = loginEmailInput.value.trim();
+        loginError.classList.remove('is-success');
+        if (!email) {
+            showError(loginError, "メールアドレスを入力してから「パスワードをお忘れですか？」を押してください。");
+            loginEmailInput.focus();
+            return;
+        }
+        const result = await window.AppStorage.auth.resetPassword(email);
+        // Treat "user not found" as success too, so we never disclose whether
+        // the address is registered (account enumeration protection).
+        if (result.success || (result.error && result.error.includes('auth/user-not-found'))) {
+            loginError.classList.add('is-success');
+            showError(loginError, "パスワード再設定用のメールを送信しました。届かない場合は迷惑メールもご確認ください。");
+        } else if (result.error && result.error.includes('auth/invalid-email')) {
+            showError(loginError, "メールアドレスの形式が正しくありません。");
+        } else {
+            showError(loginError, "メールの送信に失敗しました。しばらくしてから再度お試しください。");
         }
     });
 }
@@ -197,11 +245,7 @@ if (signupBtn) {
 
         const result = await window.AppStorage.auth.signUp(email, password);
         if (!result.success) {
-            let msg = "登録に失敗しました: " + result.error;
-            if (result.error && result.error.includes('email-already-in-use')) {
-                msg = "このメールアドレスは既に使用されています。ログインしてください。";
-            }
-            showError(signupError, msg);
+            showError(signupError, friendlyAuthError(result.error, 'signup'));
         } else {
             // Success! 
             // Manually transition to Link User screen to ensure smooth flow
@@ -223,7 +267,7 @@ if (googleLoginBtn) {
     googleLoginBtn.addEventListener('click', async () => {
         const result = await window.AppStorage.auth.signInWithGoogle();
         if (!result.success) {
-            showError(loginError, "Googleログインに失敗しました: " + result.error);
+            showError(loginError, friendlyAuthError(result.error, 'login'));
         }
     });
 }
@@ -233,7 +277,7 @@ if (googleSignupBtn) {
     googleSignupBtn.addEventListener('click', async () => {
         const result = await window.AppStorage.auth.signInWithGoogle();
         if (!result.success) {
-            showError(signupError, "Google登録に失敗しました: " + result.error);
+            showError(signupError, friendlyAuthError(result.error, 'signup'));
         }
     });
 }
@@ -417,6 +461,10 @@ function navigateTo(targetId) {
         }
     }
 
+    // Hide the global app header on the standalone auth screens so the
+    // card's own branding badge isn't duplicated by the header logo.
+    document.body.classList.toggle('auth-fullscreen', targetId === 'signup' || targetId === 'login');
+
     // Apply Action Restrictions
     updateActionRestrictions();
 }
@@ -544,6 +592,49 @@ if (cancelPasswordChangeBtn) {
     });
 }
 
+// Reauth Modal Elements
+const reauthModal = document.getElementById('reauth-modal');
+const reauthPasswordInput = document.getElementById('reauth-password-input');
+const reauthError = document.getElementById('reauth-error');
+const reauthCancelBtn = document.getElementById('reauth-cancel-btn');
+const reauthSubmitBtn = document.getElementById('reauth-submit-btn');
+
+// Holds the new password between the initial updatePassword attempt and the post-reauth retry.
+let pendingNewPassword = null;
+
+function resetPasswordChangeForm() {
+    passwordChangeForm.style.display = 'none';
+    showPasswordChangeBtn.style.display = 'inline-block';
+    if (newPasswordInput) newPasswordInput.value = '';
+}
+
+// Tracks whether the user-profile-modal was visible before we hid it for reauth,
+// so we can restore it on cancel.
+let reauthWasProfileModalOpen = false;
+
+function closeReauthModal(restoreProfile) {
+    if (reauthModal) reauthModal.style.display = 'none';
+    if (reauthPasswordInput) reauthPasswordInput.value = '';
+    if (reauthError) reauthError.textContent = '';
+    pendingNewPassword = null;
+    if (restoreProfile && reauthWasProfileModalOpen && userProfileModal) {
+        userProfileModal.style.display = 'flex';
+    }
+    reauthWasProfileModalOpen = false;
+}
+
+function openReauthModal() {
+    if (!reauthModal) return;
+    reauthWasProfileModalOpen = !!(userProfileModal && userProfileModal.style.display !== 'none' && userProfileModal.style.display !== '');
+    if (reauthWasProfileModalOpen) {
+        userProfileModal.style.display = 'none';
+    }
+    if (reauthError) reauthError.textContent = '';
+    if (reauthPasswordInput) reauthPasswordInput.value = '';
+    reauthModal.style.display = 'flex';
+    setTimeout(() => { if (reauthPasswordInput) reauthPasswordInput.focus(); }, 50);
+}
+
 if (updatePasswordBtn) {
     updatePasswordBtn.addEventListener('click', async () => {
         const newPassword = newPasswordInput.value;
@@ -555,17 +646,71 @@ if (updatePasswordBtn) {
         const result = await window.AppStorage.auth.updatePassword(newPassword);
         if (result.success) {
             alert('パスワードを変更しました。');
-            passwordChangeForm.style.display = 'none';
-            showPasswordChangeBtn.style.display = 'inline-block';
-            newPasswordInput.value = '';
-        } else {
-            if (result.error === 'auth/requires-recent-login') {
-                alert('セキュリティのため、再ログインが必要です。ログアウトします。');
-                await window.AppStorage.auth.signOut();
-                if (userProfileModal) userProfileModal.style.display = 'none';
-            } else {
-                alert('パスワードの変更に失敗しました: ' + result.message);
+            resetPasswordChangeForm();
+            return;
+        }
+
+        if (result.error === 'auth/requires-recent-login') {
+            const providerId = window.AppStorage.auth.getProviderId();
+            if (providerId && providerId !== 'password') {
+                alert('このアカウントはメールアドレス/パスワードでのログインではないため、パスワードを変更できません。');
+                return;
             }
+            pendingNewPassword = newPassword;
+            openReauthModal();
+        } else {
+            alert('パスワードの変更に失敗しました: ' + result.message);
+        }
+    });
+}
+
+if (reauthCancelBtn) {
+    reauthCancelBtn.addEventListener('click', () => {
+        closeReauthModal(true);
+    });
+}
+
+if (reauthSubmitBtn) {
+    reauthSubmitBtn.addEventListener('click', async () => {
+        const currentPassword = reauthPasswordInput ? reauthPasswordInput.value : '';
+        if (!currentPassword) {
+            if (reauthError) reauthError.textContent = '現在のパスワードを入力してください。';
+            return;
+        }
+        if (!pendingNewPassword) {
+            if (reauthError) reauthError.textContent = '内部エラー: 新しいパスワードが見つかりません。';
+            return;
+        }
+
+        reauthSubmitBtn.disabled = true;
+        const prevLabel = reauthSubmitBtn.textContent;
+        reauthSubmitBtn.textContent = '認証中...';
+        if (reauthError) reauthError.textContent = '';
+
+        const reauthResult = await window.AppStorage.auth.reauthenticate(currentPassword);
+        if (!reauthResult.success) {
+            reauthSubmitBtn.disabled = false;
+            reauthSubmitBtn.textContent = prevLabel;
+            if (reauthResult.error === 'auth/wrong-password' || reauthResult.error === 'auth/invalid-credential') {
+                if (reauthError) reauthError.textContent = 'パスワードが間違っています。';
+            } else if (reauthResult.error === 'auth/too-many-requests') {
+                if (reauthError) reauthError.textContent = '試行回数が多すぎます。しばらく待ってから再試行してください。';
+            } else {
+                if (reauthError) reauthError.textContent = '再認証に失敗しました: ' + (reauthResult.message || reauthResult.error);
+            }
+            return;
+        }
+
+        const updateResult = await window.AppStorage.auth.updatePassword(pendingNewPassword);
+        reauthSubmitBtn.disabled = false;
+        reauthSubmitBtn.textContent = prevLabel;
+
+        if (updateResult.success) {
+            closeReauthModal(false);
+            resetPasswordChangeForm();
+            alert('パスワードを変更しました。');
+        } else {
+            if (reauthError) reauthError.textContent = 'パスワードの変更に失敗しました: ' + (updateResult.message || updateResult.error);
         }
     });
 }

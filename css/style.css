@@ -682,3 +682,344 @@ section.active {
     overflow-x: auto;
     padding-bottom: 4px;
 }
+
+/* ============================================================
+   AUTH SCREEN REDESIGN (Signup) — scoped under .auth-screen
+   ============================================================ */
+.auth-screen.active {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    min-height: calc(100vh - 2 * var(--spacing-md));
+    padding: 24px 0;
+    animation: authRise 0.5s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* On the standalone signup screen the card carries the branding,
+   so hide the global header to avoid a duplicate logo. */
+body.auth-fullscreen .sticky-top {
+    display: none;
+}
+
+@keyframes authRise {
+    from {
+        opacity: 0;
+        transform: translateY(24px) scale(0.98);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+    }
+}
+
+.auth-card {
+    position: relative;
+    width: 100%;
+    max-width: 400px;
+    padding: 32px 26px 28px;
+    border-radius: 22px;
+    background:
+        linear-gradient(160deg, rgba(40, 32, 58, 0.92) 0%, rgba(24, 24, 32, 0.96) 60%),
+        var(--surface-color);
+    border: 1px solid rgba(187, 134, 252, 0.18);
+    box-shadow:
+        0 24px 60px rgba(0, 0, 0, 0.55),
+        inset 0 1px 0 rgba(255, 255, 255, 0.05);
+    overflow: hidden;
+    backdrop-filter: blur(8px);
+}
+
+/* Ambient glow accent — visually distinct from the plain login screen */
+.auth-card__glow {
+    position: absolute;
+    top: -90px;
+    right: -70px;
+    width: 220px;
+    height: 220px;
+    background: radial-gradient(circle, rgba(3, 218, 198, 0.35) 0%, rgba(187, 134, 252, 0.18) 45%, transparent 70%);
+    filter: blur(10px);
+    pointer-events: none;
+    z-index: 0;
+}
+
+.auth-card > *:not(.auth-card__glow) {
+    position: relative;
+    z-index: 1;
+}
+
+/* Brand block */
+.auth-brand {
+    text-align: center;
+    margin-bottom: 26px;
+}
+
+.auth-brand__badge {
+    width: 92px;
+    height: 92px;
+    margin: 0 auto 16px;
+    border-radius: 24px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: linear-gradient(135deg, rgba(187, 134, 252, 0.22), rgba(3, 218, 198, 0.22));
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    box-shadow: 0 8px 24px rgba(187, 134, 252, 0.25);
+}
+
+.auth-brand__badge img {
+    width: 64px;
+    height: 64px;
+    object-fit: contain;
+}
+
+.auth-card__title {
+    margin: 0 0 6px;
+    padding: 0;
+    border: none;
+    font-size: 1.55rem;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    background: linear-gradient(90deg, #d8b4fe, #5eead4);
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+}
+
+.auth-card__subtitle {
+    margin: 0;
+    color: var(--text-secondary);
+    font-size: 0.9rem;
+}
+
+/* Floating-label input fields */
+.auth-field {
+    position: relative;
+    margin-bottom: 16px;
+}
+
+.auth-field__icon {
+    position: absolute;
+    left: 14px;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 18px;
+    height: 18px;
+    color: var(--text-secondary);
+    opacity: 0.85;
+    pointer-events: none;
+    z-index: 1;
+}
+
+.auth-field input {
+    width: 100%;
+    padding: 18px 14px 8px 42px;
+    background-color: rgba(255, 255, 255, 0.04);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 14px;
+    color: var(--text-primary);
+    font-size: 1rem;
+    transition: border-color 0.2s, background-color 0.2s, box-shadow 0.2s;
+}
+
+.auth-field input:focus {
+    outline: none;
+    border-color: var(--secondary-color);
+    background-color: rgba(3, 218, 198, 0.06);
+    box-shadow: 0 0 0 3px rgba(3, 218, 198, 0.15);
+}
+
+.auth-field label {
+    position: absolute;
+    left: 42px;
+    top: 50%;
+    transform: translateY(-50%);
+    margin: 0;
+    color: var(--text-secondary);
+    font-size: 1rem;
+    pointer-events: none;
+    transition: all 0.18s ease;
+}
+
+.auth-field input:focus + label,
+.auth-field input:not(:placeholder-shown) + label {
+    top: 9px;
+    transform: translateY(0);
+    left: 42px;
+    font-size: 0.7rem;
+    letter-spacing: 0.04em;
+    color: var(--secondary-color);
+}
+
+/* Primary submit — gradient with lift */
+.auth-submit {
+    width: 100%;
+    margin-top: 6px;
+    padding: 15px;
+    border: none;
+    border-radius: 14px;
+    font-size: 1rem;
+    font-weight: 700;
+    color: #0c0c10;
+    cursor: pointer;
+    background: linear-gradient(100deg, #bb86fc 0%, #03dac6 100%);
+    background-size: 160% 160%;
+    box-shadow: 0 10px 26px rgba(3, 218, 198, 0.28);
+    transition: transform 0.18s ease, box-shadow 0.18s ease, background-position 0.4s ease;
+}
+
+.auth-submit:hover {
+    transform: translateY(-2px);
+    background-position: 100% 0;
+    box-shadow: 0 14px 32px rgba(187, 134, 252, 0.38);
+}
+
+.auth-submit:active {
+    transform: translateY(0);
+}
+
+/* Divider */
+.auth-divider {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin: 20px 0;
+    color: var(--text-secondary);
+    font-size: 0.78rem;
+}
+
+.auth-divider::before,
+.auth-divider::after {
+    content: "";
+    flex: 1;
+    height: 1px;
+    background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.18), transparent);
+}
+
+/* Google button */
+.auth-google {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    padding: 13px;
+    border-radius: 14px;
+    border: 1px solid rgba(255, 255, 255, 0.16);
+    background: rgba(255, 255, 255, 0.05);
+    color: var(--text-primary);
+    font-size: 0.95rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background-color 0.2s, border-color 0.2s;
+}
+
+.auth-google:hover {
+    background: rgba(255, 255, 255, 0.1);
+    border-color: rgba(255, 255, 255, 0.28);
+}
+
+.auth-google__logo {
+    flex-shrink: 0;
+    display: block;
+}
+
+/* Switch to login */
+.auth-switch {
+    margin: 22px 0 0;
+    text-align: center;
+    color: var(--text-secondary);
+    font-size: 0.88rem;
+}
+
+.auth-switch__link {
+    background: none;
+    border: none;
+    padding: 0 2px;
+    font-size: 0.88rem;
+    font-weight: 700;
+    color: var(--secondary-color);
+    cursor: pointer;
+    text-decoration: underline;
+    text-underline-offset: 3px;
+}
+
+.auth-switch__link:hover {
+    color: #5eead4;
+}
+
+.auth-error {
+    margin-top: 16px;
+}
+
+.auth-error.is-success {
+    color: var(--secondary-color);
+    background-color: rgba(3, 218, 198, 0.1);
+    border-color: var(--secondary-color);
+}
+
+/* Forgot-password row */
+.auth-row-end {
+    display: flex;
+    justify-content: flex-end;
+    margin: -4px 0 16px;
+}
+
+.auth-text-link {
+    background: none;
+    border: none;
+    padding: 0;
+    color: var(--text-secondary);
+    font-size: 0.82rem;
+    cursor: pointer;
+    transition: color 0.2s;
+}
+
+.auth-text-link:hover {
+    color: var(--primary-color);
+}
+
+/* ---- Login variant: violet-led accent to distinguish from signup ---- */
+.auth-card--login .auth-card__glow {
+    right: auto;
+    left: -70px;
+    background: radial-gradient(circle, rgba(187, 134, 252, 0.4) 0%, rgba(129, 140, 248, 0.2) 45%, transparent 70%);
+}
+
+.auth-card--login .auth-card__title {
+    background: linear-gradient(90deg, #818cf8, #d8b4fe);
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+}
+
+.auth-card--login .auth-brand__badge {
+    box-shadow: 0 8px 24px rgba(129, 140, 248, 0.3);
+}
+
+.auth-card--login .auth-field input:focus {
+    border-color: var(--primary-color);
+    background-color: rgba(187, 134, 252, 0.07);
+    box-shadow: 0 0 0 3px rgba(187, 134, 252, 0.18);
+}
+
+.auth-card--login .auth-field input:focus + label,
+.auth-card--login .auth-field input:not(:placeholder-shown) + label {
+    color: var(--primary-color);
+}
+
+.auth-card--login .auth-submit {
+    background: linear-gradient(100deg, #818cf8 0%, #bb86fc 100%);
+    box-shadow: 0 10px 26px rgba(187, 134, 252, 0.3);
+}
+
+.auth-card--login .auth-submit:hover {
+    box-shadow: 0 14px 32px rgba(129, 140, 248, 0.4);
+}
+
+.auth-card--login .auth-switch__link {
+    color: var(--primary-color);
+}
+
+.auth-card--login .auth-switch__link:hover {
+    color: #d8b4fe;
+}
