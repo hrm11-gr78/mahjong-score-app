@@ -1,0 +1,25 @@
+- main [ref=e3]:
+  - generic [ref=e5]:
+    - generic [ref=e6]:
+      - img "雀ログ" [ref=e8]
+      - heading "おかえりなさい" [level=2] [ref=e9]
+      - paragraph [ref=e10]: ログインして対局の記録を続けましょう。
+    - generic [ref=e11]:
+      - generic: ✉️
+      - textbox "メールアドレス" [ref=e12]:
+        - /placeholder: " "
+      - generic: メールアドレス
+    - generic [ref=e13]:
+      - generic: 🔒
+      - textbox "パスワード" [ref=e14]:
+        - /placeholder: " "
+      - generic: パスワード
+    - button "パスワードをお忘れですか？" [ref=e16] [cursor=pointer]
+    - button "ログイン" [ref=e17] [cursor=pointer]
+    - generic [ref=e19]: または
+    - button "G Googleでログイン" [ref=e20] [cursor=pointer]:
+      - generic [ref=e21]: G
+      - generic [ref=e22]: Googleでログイン
+    - paragraph [ref=e23]:
+      - text: アカウントをお持ちでないですか？
+      - button "新規登録" [ref=e24] [cursor=pointer]

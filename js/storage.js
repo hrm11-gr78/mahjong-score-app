@@ -615,6 +615,17 @@ window.AppStorage.auth = {
         }
     },
 
+    resetPassword: async function (email) {
+        if (typeof firebase === 'undefined') return { success: false, error: "インターネット未接続のため送信できません。" };
+        try {
+            await firebase.auth().sendPasswordResetEmail(email);
+            return { success: true };
+        } catch (e) {
+            console.error("resetPassword failed:", e);
+            return { success: false, error: e.message };
+        }
+    },
+
     getLinkedUser: async function (uid) {
         try {
             // Check if any user document has this uid
@@ -666,6 +677,30 @@ window.AppStorage.auth = {
             console.error("Update password failed:", e);
             return { success: false, error: e.code, message: e.message };
         }
+    },
+
+    reauthenticate: async function (currentPassword) {
+        try {
+            const user = firebase.auth().currentUser;
+            if (!user) {
+                return { success: false, error: "No user logged in" };
+            }
+            if (!user.email) {
+                return { success: false, error: "auth/no-email", message: "メールアドレスが登録されていません。" };
+            }
+            const credential = firebase.auth.EmailAuthProvider.credential(user.email, currentPassword);
+            await user.reauthenticateWithCredential(credential);
+            return { success: true };
+        } catch (e) {
+            console.error("Reauthenticate failed:", e);
+            return { success: false, error: e.code, message: e.message };
+        }
+    },
+
+    getProviderId: function () {
+        const user = firebase.auth().currentUser;
+        if (!user || !user.providerData || user.providerData.length === 0) return null;
+        return user.providerData[0].providerId;
     }
 };
 // --- Delete League ---

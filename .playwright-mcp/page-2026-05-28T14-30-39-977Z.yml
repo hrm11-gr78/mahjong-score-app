@@ -1,0 +1,8 @@
+- generic [ref=e2]:
+  - banner [ref=e4]:
+    - heading "雀ログ" [level=1] [ref=e5] [cursor=pointer]:
+      - img "雀ログ" [ref=e6]
+  - generic [ref=e8]:
+    - img "雀ログ" [ref=e9]
+    - text: 雀ログ
+  - main

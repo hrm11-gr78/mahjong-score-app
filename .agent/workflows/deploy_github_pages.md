@@ -20,12 +20,12 @@ description: How to deploy the Mahjong Score App to GitHub Pages for free
 
 ### ブラウザを使う場合（一番簡単）
 1. 作成したリポジトリの画面で、「uploading an existing file」というリンクをクリックします。
-2. `c:\Users\hirom\OneDrive\Desktop\麻雀スコア管理` フォルダの中身（`index.html`, `css`, `js`, `manifest.json`, `sw.js` など全て）をドラッグ＆ドロップします。
+2. `c:\Users\hirom\OneDrive\Desktop\雀ログ` フォルダの中身（`index.html`, `css`, `js`, `manifest.json`, `sw.js` など全て）をドラッグ＆ドロップします。
 3. 下の「Commit changes」ボタンをクリックします。
 
 ### コマンドラインを使う場合（Git導入済みの方）
 ```bash
-cd c:\Users\hirom\OneDrive\Desktop\麻雀スコア管理
+cd c:\Users\hirom\OneDrive\Desktop\雀ログ
 git init
 git add .
 git commit -m "Initial commit"

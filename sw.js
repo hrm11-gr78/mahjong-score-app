@@ -1,4 +1,4 @@
-const CACHE_NAME = 'mahjong-score-app-v202603102248';
+const CACHE_NAME = 'mahjong-score-app-v202605281500';
 const ASSETS_TO_CACHE = [
     './',
     './index.html',
@@ -12,6 +12,7 @@ const ASSETS_TO_CACHE = [
     './images/pwa-icon-192.png',
     './images/app-icon.png',
     './images/icon.png',
+    './images/login-icon.png',
     'https://cdn.jsdelivr.net/npm/chart.js'
 ];
 
