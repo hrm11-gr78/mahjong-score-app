@@ -73,3 +73,11 @@ backups/
 
 # プロジェクトローカルのMCP設定（個人パス含む）
 .mcp.json
+
+# Playwright MCP の検証スナップショット（生成物のためコミットしない）
+.playwright-mcp/
+
+# ルート直下の検証用スクリーンショット（images/配下の正規アセットは対象外）
+/login-review-full.png
+/signup-*.png
+/login-*.png
