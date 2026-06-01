@@ -73,6 +73,30 @@ window.AppStorage.updateUserTitle = async function (name, title) {
     }
 };
 
+window.AppStorage.getUserAvatar = async function (name) {
+    try {
+        const doc = await db.collection("users").doc(name).get();
+        if (!doc.exists) return null;
+        return doc.data().avatarBase64 || null;
+    } catch (e) {
+        console.error("getUserAvatar failed:", e);
+        return null;
+    }
+};
+
+window.AppStorage.updateUserAvatar = async function (name, avatarBase64) {
+    const value = avatarBase64 == null
+        ? firebase.firestore.FieldValue.delete()
+        : avatarBase64;
+    try {
+        await db.collection("users").doc(name).set({ avatarBase64: value }, { merge: true });
+        return true;
+    } catch (e) {
+        console.error("updateUserAvatar failed:", e);
+        return false;
+    }
+};
+
 window.AppStorage.getUnlinkedUsers = async function () {
     try {
         const snapshot = await db.collection("users").get();
