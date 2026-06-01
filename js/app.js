@@ -543,18 +543,357 @@ if (headerProfileBtn) {
         if (nameEl) nameEl.textContent = deviceUser;
         if (emailEl) emailEl.textContent = email;
 
+        // Account metadata (creation / last sign-in)
+        const createdEl = document.getElementById('profile-created');
+        const lastLoginEl = document.getElementById('profile-last-login');
+        const meta = currentUser && currentUser.metadata;
+        if (createdEl) createdEl.textContent = formatProfileDate(meta && meta.creationTime);
+        if (lastLoginEl) lastLoginEl.textContent = formatProfileDate(meta && meta.lastSignInTime);
+
         // Show modal
         if (userProfileModal) {
             userProfileModal.style.display = 'flex';
         }
+
+        // Load avatar (async; show placeholder until ready)
+        setProfileAvatarImage(null);
+        if (deviceUser && deviceUser !== '未設定') {
+            try {
+                const avatar = await window.AppStorage.getUserAvatar(deviceUser);
+                setProfileAvatarImage(avatar);
+            } catch (e) {
+                console.error('Failed to load avatar:', e);
+            }
+        }
     });
 }
+
+// --- Profile Avatar Upload ---
+const profileAvatarBtn = document.getElementById('profile-avatar-btn');
+const profileAvatarInput = document.getElementById('profile-avatar-input');
+const profileAvatarImg = document.getElementById('profile-avatar-img');
+const profileAvatarPlaceholder = document.getElementById('profile-avatar-placeholder');
+const profileAvatarLoading = document.getElementById('profile-avatar-loading');
+const profileAvatarMenu = document.getElementById('profile-avatar-menu');
+const profileAvatarMenuChange = document.getElementById('profile-avatar-menu-change');
+const profileAvatarMenuRemove = document.getElementById('profile-avatar-menu-remove');
+
+let profileHasAvatar = false;
+
+function openProfileAvatarMenu() {
+    if (profileAvatarMenu) {
+        profileAvatarMenu.style.display = 'flex';
+        // Defer to next frame so the transition kicks in
+        requestAnimationFrame(() => profileAvatarMenu.classList.add('is-open'));
+    }
+}
+
+function closeProfileAvatarMenu() {
+    if (profileAvatarMenu) {
+        profileAvatarMenu.classList.remove('is-open');
+        // Wait for the fade-out before hiding (matches CSS transition)
+        setTimeout(() => {
+            if (profileAvatarMenu && !profileAvatarMenu.classList.contains('is-open')) {
+                profileAvatarMenu.style.display = 'none';
+            }
+        }, 160);
+    }
+}
+
+function openProfileAvatarFilePicker() {
+    if (!profileAvatarInput) return;
+    profileAvatarInput.value = '';
+    profileAvatarInput.click();
+}
+
+function setProfileAvatarImage(base64OrUrl) {
+    if (!profileAvatarImg || !profileAvatarPlaceholder) return;
+    if (base64OrUrl) {
+        profileAvatarImg.src = base64OrUrl;
+        profileAvatarImg.style.display = 'block';
+        profileAvatarPlaceholder.style.display = 'none';
+        profileHasAvatar = true;
+    } else {
+        profileAvatarImg.removeAttribute('src');
+        profileAvatarImg.style.display = 'none';
+        profileAvatarPlaceholder.style.display = '';
+        profileHasAvatar = false;
+    }
+}
+
+function setProfileAvatarLoading(loading) {
+    if (profileAvatarLoading) profileAvatarLoading.style.display = loading ? 'block' : 'none';
+    if (profileAvatarBtn) profileAvatarBtn.disabled = !!loading;
+}
+
+if (profileAvatarBtn && profileAvatarInput) {
+    profileAvatarBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        if (profileHasAvatar) {
+            // Toggle the popover menu
+            const isOpen = profileAvatarMenu && profileAvatarMenu.classList.contains('is-open');
+            if (isOpen) {
+                closeProfileAvatarMenu();
+            } else {
+                openProfileAvatarMenu();
+            }
+        } else {
+            // No avatar yet — go straight to the file picker
+            openProfileAvatarFilePicker();
+        }
+    });
+}
+
+if (profileAvatarMenuChange) {
+    profileAvatarMenuChange.addEventListener('click', () => {
+        closeProfileAvatarMenu();
+        openProfileAvatarFilePicker();
+    });
+}
+
+if (profileAvatarMenuRemove) {
+    profileAvatarMenuRemove.addEventListener('click', async () => {
+        closeProfileAvatarMenu();
+        const deviceUser = localStorage.getItem('deviceUser');
+        if (!deviceUser) return;
+        if (!confirm('プロフィール画像を削除しますか？')) return;
+
+        setProfileAvatarLoading(true);
+        try {
+            const ok = await window.AppStorage.updateUserAvatar(deviceUser, null);
+            if (!ok) throw new Error('削除に失敗しました');
+            setProfileAvatarImage(null);
+        } catch (err) {
+            console.error('Avatar delete failed:', err);
+            alert(`画像の削除に失敗しました\n${err.message || ''}`);
+        } finally {
+            setProfileAvatarLoading(false);
+        }
+    });
+}
+
+// Close the popover when clicking outside the avatar/menu
+document.addEventListener('click', (e) => {
+    if (!profileAvatarMenu || profileAvatarMenu.style.display === 'none') return;
+    if (profileAvatarBtn && profileAvatarBtn.contains(e.target)) return;
+    if (profileAvatarMenu.contains(e.target)) return;
+    closeProfileAvatarMenu();
+});
+
+if (profileAvatarInput) {
+    profileAvatarInput.addEventListener('change', (e) => {
+        const file = e.target.files && e.target.files[0];
+        if (!file) return;
+        if (!file.type.startsWith('image/')) {
+            alert('画像ファイルを選択してください');
+            return;
+        }
+        openAvatarCropper(file);
+    });
+}
+
+function formatProfileDate(dateStr) {
+    if (!dateStr) return '—';
+    const d = new Date(dateStr);
+    if (isNaN(d.getTime())) return '—';
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${y}/${m}/${day}`;
+}
+
+// --- Avatar Cropper ---
+const avatarCropperModal = document.getElementById('avatar-cropper-modal');
+const avatarCropperStage = document.getElementById('avatar-cropper-stage');
+const avatarCropperImage = document.getElementById('avatar-cropper-image');
+const avatarCropperZoom = document.getElementById('avatar-cropper-zoom');
+const avatarCropperCancelBtn = document.getElementById('avatar-cropper-cancel');
+const avatarCropperConfirmBtn = document.getElementById('avatar-cropper-confirm');
+
+const cropState = {
+    objectUrl: null,
+    natW: 0,
+    natH: 0,
+    stageSize: 280,
+    minScale: 1, // fit-cover scale
+    scale: 1,
+    tx: 0,
+    ty: 0,
+    dragging: false,
+    startPx: 0,
+    startPy: 0,
+    startTx: 0,
+    startTy: 0,
+};
+
+function applyCropTransform() {
+    avatarCropperImage.style.transform =
+        `translate(${cropState.tx}px, ${cropState.ty}px) scale(${cropState.scale})`;
+}
+
+function clampCropOffsets() {
+    const W = cropState.stageSize;
+    const minTx = W - cropState.natW * cropState.scale;
+    const minTy = W - cropState.natH * cropState.scale;
+    cropState.tx = Math.min(0, Math.max(minTx, cropState.tx));
+    cropState.ty = Math.min(0, Math.max(minTy, cropState.ty));
+}
+
+function openAvatarCropper(file) {
+    if (cropState.objectUrl) URL.revokeObjectURL(cropState.objectUrl);
+    cropState.objectUrl = URL.createObjectURL(file);
+
+    avatarCropperImage.onload = () => {
+        cropState.natW = avatarCropperImage.naturalWidth;
+        cropState.natH = avatarCropperImage.naturalHeight;
+        const W = cropState.stageSize;
+        // Fit-cover so the image fully covers the square stage
+        const coverScale = Math.max(W / cropState.natW, W / cropState.natH);
+        cropState.minScale = coverScale;
+        cropState.scale = coverScale;
+        // Slider range: 1x (cover) to 3x cover
+        avatarCropperZoom.min = '1';
+        avatarCropperZoom.max = '3';
+        avatarCropperZoom.step = '0.01';
+        avatarCropperZoom.value = '1';
+        // Center
+        cropState.tx = (W - cropState.natW * cropState.scale) / 2;
+        cropState.ty = (W - cropState.natH * cropState.scale) / 2;
+        clampCropOffsets();
+        applyCropTransform();
+    };
+    avatarCropperImage.src = cropState.objectUrl;
+    avatarCropperModal.style.display = 'flex';
+}
+
+function closeAvatarCropper() {
+    avatarCropperModal.style.display = 'none';
+    if (cropState.objectUrl) {
+        URL.revokeObjectURL(cropState.objectUrl);
+        cropState.objectUrl = null;
+    }
+    avatarCropperImage.removeAttribute('src');
+    // Reset the file input so picking the same file again still triggers change
+    if (profileAvatarInput) profileAvatarInput.value = '';
+}
+
+if (avatarCropperZoom) {
+    avatarCropperZoom.addEventListener('input', () => {
+        const W = cropState.stageSize;
+        const multiplier = parseFloat(avatarCropperZoom.value) || 1;
+        const newScale = cropState.minScale * multiplier;
+        // Keep stage center anchored while zooming
+        const centerX = W / 2;
+        const centerY = W / 2;
+        const imgCxBefore = (centerX - cropState.tx) / cropState.scale;
+        const imgCyBefore = (centerY - cropState.ty) / cropState.scale;
+        cropState.scale = newScale;
+        cropState.tx = centerX - imgCxBefore * newScale;
+        cropState.ty = centerY - imgCyBefore * newScale;
+        clampCropOffsets();
+        applyCropTransform();
+    });
+}
+
+if (avatarCropperStage) {
+    const onPointerDown = (e) => {
+        cropState.dragging = true;
+        cropState.startPx = e.clientX;
+        cropState.startPy = e.clientY;
+        cropState.startTx = cropState.tx;
+        cropState.startTy = cropState.ty;
+        avatarCropperStage.setPointerCapture(e.pointerId);
+    };
+    const onPointerMove = (e) => {
+        if (!cropState.dragging) return;
+        cropState.tx = cropState.startTx + (e.clientX - cropState.startPx);
+        cropState.ty = cropState.startTy + (e.clientY - cropState.startPy);
+        clampCropOffsets();
+        applyCropTransform();
+    };
+    const onPointerUp = (e) => {
+        cropState.dragging = false;
+        try { avatarCropperStage.releasePointerCapture(e.pointerId); } catch (_) { }
+    };
+    avatarCropperStage.addEventListener('pointerdown', onPointerDown);
+    avatarCropperStage.addEventListener('pointermove', onPointerMove);
+    avatarCropperStage.addEventListener('pointerup', onPointerUp);
+    avatarCropperStage.addEventListener('pointercancel', onPointerUp);
+
+    // Mouse wheel zoom on desktop
+    avatarCropperStage.addEventListener('wheel', (e) => {
+        e.preventDefault();
+        const cur = parseFloat(avatarCropperZoom.value) || 1;
+        const step = e.deltaY < 0 ? 0.08 : -0.08;
+        const next = Math.min(3, Math.max(1, cur + step));
+        avatarCropperZoom.value = String(next);
+        avatarCropperZoom.dispatchEvent(new Event('input'));
+    }, { passive: false });
+}
+
+if (avatarCropperCancelBtn) {
+    avatarCropperCancelBtn.addEventListener('click', closeAvatarCropper);
+}
+
+if (avatarCropperConfirmBtn) {
+    avatarCropperConfirmBtn.addEventListener('click', async () => {
+        const deviceUser = localStorage.getItem('deviceUser');
+        if (!deviceUser) {
+            alert('ユーザー名が設定されていません');
+            return;
+        }
+
+        const OUT = 256; // final avatar resolution (px)
+        const W = cropState.stageSize;
+        // Visible region of the image in image-coords
+        const srcX = -cropState.tx / cropState.scale;
+        const srcY = -cropState.ty / cropState.scale;
+        const srcSize = W / cropState.scale;
+
+        const canvas = document.createElement('canvas');
+        canvas.width = OUT;
+        canvas.height = OUT;
+        const ctx = canvas.getContext('2d');
+        ctx.imageSmoothingQuality = 'high';
+        ctx.drawImage(avatarCropperImage, srcX, srcY, srcSize, srcSize, 0, 0, OUT, OUT);
+
+        const blob = await new Promise((resolve) =>
+            canvas.toBlob(resolve, 'image/jpeg', 0.85)
+        );
+        if (!blob) {
+            alert('画像の生成に失敗しました');
+            return;
+        }
+
+        // Close cropper first to give immediate feedback
+        closeAvatarCropper();
+
+        setProfileAvatarLoading(true);
+        try {
+            const base64 = await window.AppStorage.uploadImage(blob, `avatars/${deviceUser}.jpg`);
+            if (!base64) throw new Error('画像変換に失敗しました');
+            if (base64.length > 900_000) {
+                throw new Error('画像サイズが大きすぎます。別の画像を選んでください。');
+            }
+            const ok = await window.AppStorage.updateUserAvatar(deviceUser, base64);
+            if (!ok) throw new Error('保存に失敗しました');
+            setProfileAvatarImage(base64);
+        } catch (err) {
+            console.error('Avatar upload failed:', err);
+            alert(`プロフィール画像の保存に失敗しました\n${err.message || ''}`);
+        } finally {
+            setProfileAvatarLoading(false);
+        }
+    });
+}
+
 
 if (closeProfileModalBtn) {
     closeProfileModalBtn.addEventListener('click', () => {
         if (userProfileModal) {
             userProfileModal.style.display = 'none';
         }
+        closeProfileAvatarMenu();
     });
 }
 
@@ -3632,6 +3971,9 @@ if (settingsForm) {
         };
         await window.AppStorage.saveSettings(settings);
 
+        ruleInitialSettings = { ...settings, uma: [...settings.uma] };
+        updateRuleSaveState();
+
         alert('設定を保存しました。');
     });
 }
@@ -3652,6 +3994,8 @@ if (resetSettingsBtn) {
     });
 }
 
+let ruleInitialSettings = null;
+
 async function loadSettingsToForm() {
     const settings = await window.AppStorage.getSettings();
     document.getElementById('set-start').value = settings.startScore;
@@ -3665,7 +4009,304 @@ async function loadSettingsToForm() {
     radios.forEach(r => {
         if (r.value === settings.tieBreaker) r.checked = true;
     });
+
+    ruleInitialSettings = {
+        startScore: settings.startScore,
+        returnScore: settings.returnScore,
+        uma: [...settings.uma],
+        tieBreaker: settings.tieBreaker,
+    };
+
+    refreshRuleUI();
 }
+
+// --- Rule preset & live integrity ---
+const RULE_PRESETS = {
+    mleague:  { startScore: 25000, returnScore: 30000, uma: [30, 10, -10, -30], tieBreaker: 'priority' },
+    standard: { startScore: 25000, returnScore: 30000, uma: [20, 10, -10, -20], tieBreaker: 'split' },
+    kyogi:    { startScore: 30000, returnScore: 30000, uma: [20, 10, -10, -20], tieBreaker: 'priority' },
+};
+
+function readCurrentRuleForm() {
+    const startScore = Number(document.getElementById('set-start').value);
+    const returnScore = Number(document.getElementById('set-return').value);
+    const uma = [
+        Number(document.getElementById('set-uma1').value),
+        Number(document.getElementById('set-uma2').value),
+        Number(document.getElementById('set-uma3').value),
+        Number(document.getElementById('set-uma4').value),
+    ];
+    const tieBreakerRadio = document.querySelector('input[name="tieBreaker"]:checked');
+    const tieBreaker = tieBreakerRadio ? tieBreakerRadio.value : 'priority';
+    return { startScore, returnScore, uma, tieBreaker };
+}
+
+function updateRuleIntegrity() {
+    const r = readCurrentRuleForm();
+    const umaSum = r.uma.reduce((a, b) => a + (Number.isFinite(b) ? b : 0), 0);
+    const oka = Math.max(0, (r.returnScore - r.startScore) * 4);
+
+    const umaEl = document.getElementById('rule-integrity-uma');
+    const umaBadge = document.getElementById('rule-integrity-uma-badge');
+    const okaEl = document.getElementById('rule-integrity-oka');
+    if (umaEl) umaEl.textContent = (umaSum > 0 ? '+' : '') + umaSum;
+    if (umaBadge) {
+        umaBadge.classList.remove('rule-integrity__badge--ok', 'rule-integrity__badge--ng');
+        if (umaSum === 0) {
+            umaBadge.textContent = 'OK';
+            umaBadge.classList.add('rule-integrity__badge--ok');
+        } else {
+            umaBadge.textContent = `合計が0ではありません`;
+            umaBadge.classList.add('rule-integrity__badge--ng');
+        }
+    }
+    if (okaEl) okaEl.textContent = oka.toLocaleString('en-US');
+}
+
+function rulesMatchPreset(current, preset) {
+    return current.startScore === preset.startScore
+        && current.returnScore === preset.returnScore
+        && current.tieBreaker === preset.tieBreaker
+        && current.uma.length === 4
+        && current.uma.every((v, i) => v === preset.uma[i]);
+}
+
+function updateRulePresetActive() {
+    const current = readCurrentRuleForm();
+    let matchedKey = null;
+    Object.keys(RULE_PRESETS).forEach(key => {
+        if (rulesMatchPreset(current, RULE_PRESETS[key])) matchedKey = key;
+    });
+
+    document.querySelectorAll('.rule-preset-btn').forEach(btn => {
+        const key = btn.dataset.preset;
+        if (key === 'custom') {
+            // Custom indicator: highlights when no preset matches
+            btn.classList.toggle('is-active', matchedKey === null);
+        } else {
+            btn.classList.toggle('is-active', key === matchedKey);
+        }
+    });
+
+    const stateEl = document.getElementById('rule-preset-state');
+    if (stateEl) {
+        if (matchedKey) {
+            const labels = { mleague: 'Mリーグ準拠', standard: '一般ルール', kyogi: '競技ルール' };
+            stateEl.textContent = labels[matchedKey] || matchedKey;
+            stateEl.dataset.state = 'preset';
+        } else {
+            stateEl.textContent = '✨ カスタム設定中';
+            stateEl.dataset.state = 'custom';
+        }
+    }
+}
+
+function applyRulePreset(key) {
+    const preset = RULE_PRESETS[key];
+    if (!preset) return;
+    document.getElementById('set-start').value = preset.startScore;
+    document.getElementById('set-return').value = preset.returnScore;
+    document.getElementById('set-uma1').value = preset.uma[0];
+    document.getElementById('set-uma2').value = preset.uma[1];
+    document.getElementById('set-uma3').value = preset.uma[2];
+    document.getElementById('set-uma4').value = preset.uma[3];
+    document.getElementsByName('tieBreaker').forEach(r => {
+        r.checked = r.value === preset.tieBreaker;
+    });
+    updateRuleIntegrity();
+    updateRulePresetActive();
+}
+
+document.querySelectorAll('.rule-preset-btn').forEach(btn => {
+    if (btn.dataset.preset === 'custom') return; // indicator only
+    btn.addEventListener('click', () => applyRulePreset(btn.dataset.preset));
+});
+
+function refreshRuleUI() {
+    updateRuleIntegrity();
+    updateRulePresetActive();
+    updateRulePreview();
+    updateRuleSaveState();
+}
+
+// Live recalculation on any rule input change
+['set-start', 'set-return', 'set-uma1', 'set-uma2', 'set-uma3', 'set-uma4'].forEach((id) => {
+    const el = document.getElementById(id);
+    if (el) el.addEventListener('input', refreshRuleUI);
+});
+document.getElementsByName('tieBreaker').forEach((r) => {
+    r.addEventListener('change', refreshRuleUI);
+});
+
+// --- Live preview ---
+const PREVIEW_NORMAL_SCORES = [50000, 30000, 15000, 5000];
+const PREVIEW_TIE_SCORES = [35000, 35000, 20000, 10000];
+const PREVIEW_WINDS = ['東', '南', '西', '北'];
+
+function renderPreviewRows(ulId, players, withWinds) {
+    const ul = document.getElementById(ulId);
+    if (!ul) return;
+    ul.innerHTML = '';
+    // Sort by rank for display
+    const sorted = [...players].sort((a, b) => (a.rank - b.rank) || (a.index - b.index));
+    sorted.forEach((p) => {
+        const li = document.createElement('li');
+        li.className = 'rule-preview__row';
+        const rankCls = `rule-preview__rank rule-preview__rank--${p.rank}`;
+        const finalNum = Number(p.finalScore);
+        const finalCls = finalNum > 0 ? 'rule-preview__final--pos' : (finalNum < 0 ? 'rule-preview__final--neg' : '');
+        const sign = finalNum > 0 ? '+' : '';
+        const wind = withWinds ? `<span class="rule-preview__wind">${PREVIEW_WINDS[p.index]}家</span>` : '<span></span>';
+        li.innerHTML = `
+            <span class="${rankCls}">${p.rank}</span>
+            ${wind}
+            <span class="rule-preview__raw">${p.rawScore.toLocaleString('en-US')}</span>
+            <span class="rule-preview__final ${finalCls}">${sign}${finalNum.toFixed(1)}</span>
+        `;
+        ul.appendChild(li);
+    });
+}
+
+function updateRulePreview() {
+    const cur = readCurrentRuleForm();
+    const umaSum = cur.uma.reduce((a, b) => a + b, 0);
+    // Bail out if config is invalid (uma sum != 0 or return < start) — clear and show note
+    if (umaSum !== 0 || cur.returnScore < cur.startScore) {
+        ['rule-preview-normal', 'rule-preview-tie'].forEach(id => {
+            const ul = document.getElementById(id);
+            if (ul) ul.innerHTML = '<li class="rule-preview__row" style="color: var(--text-secondary); font-size: 0.78rem;">設定値を整えると例が表示されます</li>';
+        });
+        const modeEl = document.getElementById('rule-preview-tie-mode');
+        if (modeEl) modeEl.textContent = '';
+        return;
+    }
+
+    if (!window.Mahjong || !window.Mahjong.calculateResult) return;
+
+    const normalRes = window.Mahjong.calculateResult(PREVIEW_NORMAL_SCORES, cur);
+    if (Array.isArray(normalRes)) renderPreviewRows('rule-preview-normal', normalRes, false);
+
+    // Tie scenario — pass winds (East..North) so priority mode can resolve
+    const tieRes = window.Mahjong.calculateResult(PREVIEW_TIE_SCORES, cur, PREVIEW_WINDS);
+    if (Array.isArray(tieRes)) renderPreviewRows('rule-preview-tie', tieRes, true);
+
+    const modeEl = document.getElementById('rule-preview-tie-mode');
+    if (modeEl) modeEl.textContent = cur.tieBreaker === 'priority' ? '起家優先' : '山分け';
+}
+
+// --- Save state (unchanged disabling + change badge) ---
+function rulesEqual(a, b) {
+    if (!a || !b) return false;
+    return a.startScore === b.startScore
+        && a.returnScore === b.returnScore
+        && a.tieBreaker === b.tieBreaker
+        && a.uma.length === 4 && b.uma.length === 4
+        && a.uma.every((v, i) => v === b.uma[i]);
+}
+
+function updateRuleSaveState() {
+    const cur = readCurrentRuleForm();
+    const saveBtn = document.getElementById('settings-save-btn');
+    const changesBadge = document.getElementById('rule-form-changes');
+    if (!saveBtn || !changesBadge) return;
+
+    const umaSum = cur.uma.reduce((a, b) => a + b, 0);
+    const invalid = umaSum !== 0 || cur.returnScore < cur.startScore
+        || !Number.isFinite(cur.startScore) || !Number.isFinite(cur.returnScore);
+
+    const changed = ruleInitialSettings && !rulesEqual(cur, ruleInitialSettings);
+
+    saveBtn.disabled = !changed || invalid;
+    changesBadge.classList.toggle('is-visible', !!changed);
+}
+
+// --- Help popover ---
+const HELP_TEXTS = {
+    'start-score': {
+        title: '配給原点',
+        body: '各プレイヤーが対局開始時に持つ点数。通常 25000点 が一般的で、競技ルールでは 30000点 のことも。'
+    },
+    'return-score': {
+        title: '返し点',
+        body: '終局時の精算基準となる点数。(返し点 − 配給原点)×4 がオカとして1着に支給されます。Mリーグルールでは 30000点。'
+    },
+    'uma': {
+        title: 'ウマ',
+        body: '終局順位ごとに加減される点数。合計は0になるよう設定します。(+30/+10/−10/−30) や (+20/+10/−10/−20) のような対称形が一般的です。'
+    },
+    'tie-breaker': {
+        title: '同点時の処理',
+        body: '点数が並んだとき順位をどう決めるか。「起家優先」は風（東＞南＞西＞北）の順、「山分け」はウマ・オカを同点者で頭割りします。'
+    },
+};
+
+const helpPopover = document.getElementById('rule-help-popover');
+const helpPopoverTitle = document.getElementById('rule-help-popover-title');
+const helpPopoverBody = document.getElementById('rule-help-popover-body');
+let helpPopoverAnchor = null;
+
+function openHelpPopover(anchor, key) {
+    const def = HELP_TEXTS[key];
+    if (!def || !helpPopover) return;
+    helpPopoverTitle.textContent = def.title;
+    helpPopoverBody.textContent = def.body;
+    helpPopover.classList.add('is-open');
+    helpPopover.setAttribute('aria-hidden', 'false');
+    helpPopoverAnchor = anchor;
+
+    // Position below the anchor
+    const rect = anchor.getBoundingClientRect();
+    const popRect = helpPopover.getBoundingClientRect();
+    const scrollY = window.scrollY || window.pageYOffset;
+    const scrollX = window.scrollX || window.pageXOffset;
+
+    let top = rect.bottom + scrollY + 8;
+    let left = rect.left + scrollX + rect.width / 2 - popRect.width / 2;
+
+    // Clamp to viewport horizontally
+    const margin = 8;
+    const maxLeft = scrollX + document.documentElement.clientWidth - popRect.width - margin;
+    if (left < scrollX + margin) left = scrollX + margin;
+    if (left > maxLeft) left = maxLeft;
+
+    helpPopover.style.top = `${top}px`;
+    helpPopover.style.left = `${left}px`;
+
+    // Position arrow
+    const arrow = helpPopover.querySelector('.rule-help-popover__arrow');
+    if (arrow) {
+        const anchorCenter = rect.left + scrollX + rect.width / 2;
+        arrow.style.left = `${Math.max(8, Math.min(popRect.width - 18, anchorCenter - left - 5))}px`;
+    }
+}
+
+function closeHelpPopover() {
+    if (!helpPopover) return;
+    helpPopover.classList.remove('is-open');
+    helpPopover.setAttribute('aria-hidden', 'true');
+    helpPopoverAnchor = null;
+}
+
+document.querySelectorAll('.rule-help').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const key = btn.dataset.help;
+        if (helpPopoverAnchor === btn && helpPopover.classList.contains('is-open')) {
+            closeHelpPopover();
+        } else {
+            openHelpPopover(btn, key);
+        }
+    });
+});
+
+document.addEventListener('click', (e) => {
+    if (!helpPopover || !helpPopover.classList.contains('is-open')) return;
+    if (helpPopover.contains(e.target)) return;
+    if (e.target.classList && e.target.classList.contains('rule-help')) return;
+    closeHelpPopover();
+});
+
+window.addEventListener('resize', closeHelpPopover);
 
 function setupScoreValidation() {
     // Initial validation setup is handled by event listeners above
@@ -4714,72 +5355,421 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 // Render Gallery
+// Type-specific gradient / glyph for placeholder cards
+const YAKUMAN_STYLE = {
+    '国士無双':   { gradient: 'linear-gradient(135deg, #b300ff, #ffd700)', glyph: '🀅' },
+    '四暗刻':     { gradient: 'linear-gradient(135deg, #4a0e0e, #d32f2f)', glyph: '🀄' },
+    '大三元':     { gradient: 'linear-gradient(135deg, #c0392b, #e74c3c)', glyph: '🀄' },
+    '字一色':     { gradient: 'linear-gradient(135deg, #d4af37, #f7e98e)', glyph: '🀀' },
+    '緑一色':     { gradient: 'linear-gradient(135deg, #1b5e20, #66bb6a)', glyph: '🀅' },
+    '清老頭':     { gradient: 'linear-gradient(135deg, #455a64, #90a4ae)', glyph: '🀙' },
+    '四喜和':     { gradient: 'linear-gradient(135deg, #1565c0, #42a5f5)', glyph: '🀀' },
+    '九蓮宝燈':   { gradient: 'linear-gradient(135deg, #6a1b9a, #ce93d8)', glyph: '🀐' },
+    '天和':       { gradient: 'linear-gradient(135deg, #00838f, #80deea)', glyph: '🀆' },
+    '地和':       { gradient: 'linear-gradient(135deg, #4e342e, #a1887f)', glyph: '🀫' },
+    '数え役満':   { gradient: 'linear-gradient(135deg, #f57c00, #ffb74d)', glyph: '🔢' },
+};
+const YAKUMAN_DEFAULT_STYLE = { gradient: 'linear-gradient(135deg, #475569, #94a3b8)', glyph: '🀄' };
+
+// Gallery filter state (per page-load)
+const galleryState = { player: 'all', type: 'all' };
+
+// Avatar cache: { name -> base64 or null (no avatar) }
+const galleryAvatarCache = {};
+
+async function ensureAvatarsLoaded(names) {
+    const need = names.filter(n => n && !(n in galleryAvatarCache));
+    if (need.length === 0) return;
+    await Promise.all(need.map(async (name) => {
+        try {
+            const v = await window.AppStorage.getUserAvatar(name);
+            galleryAvatarCache[name] = v || null;
+        } catch (_) {
+            galleryAvatarCache[name] = null;
+        }
+    }));
+}
+
+function renderAvatarHtml(name, size) {
+    const url = galleryAvatarCache[name];
+    const cls = size === 'lg' ? 'gallery-avatar gallery-avatar--lg' : 'gallery-avatar';
+    if (url) {
+        return `<span class="${cls}"><img src="${escapeHtml(url)}" alt=""></span>`;
+    }
+    const initial = (name || '?').slice(0, 1);
+    return `<span class="${cls}">${escapeHtml(initial)}</span>`;
+}
+
+// Full list of yakuman for the dex (matches the datalist in index.html)
+const YAKUMAN_DEX_LIST = [
+    '国士無双', '四暗刻', '大三元', '字一色', '緑一色',
+    '清老頭', '四喜和', '九蓮宝燈', '天和', '地和', '数え役満'
+];
+
+function renderYakumanDex(typeCounts) {
+    const grid = document.getElementById('gallery-dex-grid');
+    const progress = document.getElementById('gallery-dex-progress');
+    if (!grid || !progress) return;
+
+    let achieved = 0;
+    grid.innerHTML = YAKUMAN_DEX_LIST.map(name => {
+        const count = typeCounts[name] || 0;
+        const isAch = count > 0;
+        if (isAch) achieved++;
+        const style = YAKUMAN_STYLE[name] || YAKUMAN_DEFAULT_STYLE;
+        return `
+            <div class="gallery-dex-cell ${isAch ? '' : 'gallery-dex-cell--locked'}"
+                 style="background: ${style.gradient};"
+                 data-type="${escapeHtml(name)}" data-achieved="${isAch ? '1' : '0'}">
+                <span class="gallery-dex-cell__glyph" aria-hidden="true">${style.glyph}</span>
+                <span class="gallery-dex-cell__name">${escapeHtml(name)}</span>
+                ${isAch ? `<span class="gallery-dex-cell__count">×${count}</span>` : `<span class="gallery-dex-cell__lock" aria-hidden="true">🔒</span>`}
+            </div>
+        `;
+    }).join('');
+    progress.textContent = `${achieved} / ${YAKUMAN_DEX_LIST.length}`;
+
+    // Click: filter gallery by type
+    grid.querySelectorAll('.gallery-dex-cell').forEach(cell => {
+        cell.addEventListener('click', () => {
+            if (cell.dataset.achieved !== '1') return;
+            const t = cell.dataset.type;
+            galleryState.type = t;
+            // Update type chip highlights to match
+            document.querySelectorAll('#gallery-filter-types .gallery-chip').forEach(b => {
+                b.classList.toggle('is-active', b.dataset.value === t);
+            });
+            renderGalleryCards(window._galleryAll || []);
+            // Scroll list into view
+            document.getElementById('gallery-list').scrollIntoView({ behavior: 'smooth', block: 'start' });
+        });
+    });
+}
+
+function groupByMonth(yakumans) {
+    const groups = {};
+    yakumans.forEach(y => {
+        const d = new Date(y.timestamp);
+        const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+        if (!groups[key]) groups[key] = { year: d.getFullYear(), month: d.getMonth() + 1, items: [] };
+        groups[key].items.push(y);
+    });
+    return Object.keys(groups).sort().reverse().map(k => groups[k]);
+}
+
+function formatCardDate(timestamp) {
+    if (!timestamp) return '';
+    const ms = Date.now() - new Date(timestamp).getTime();
+    const day = ms / 86400000;
+    if (day < 7) return formatRelativeJa(timestamp);
+    return new Date(timestamp).toLocaleDateString('ja-JP');
+}
+
+function escapeHtml(s) {
+    return String(s ?? '').replace(/[&<>"']/g, (c) => ({
+        '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+    }[c]));
+}
+
+function formatRelativeJa(timestamp) {
+    if (!timestamp) return '—';
+    const ms = Date.now() - new Date(timestamp).getTime();
+    if (!Number.isFinite(ms) || ms < 0) return '—';
+    const sec = Math.floor(ms / 1000);
+    if (sec < 60) return 'たった今';
+    const min = Math.floor(sec / 60);
+    if (min < 60) return `${min}分前`;
+    const hr = Math.floor(min / 60);
+    if (hr < 24) return `${hr}時間前`;
+    const day = Math.floor(hr / 24);
+    if (day < 7) return `${day}日前`;
+    if (day < 30) return `${Math.floor(day / 7)}週間前`;
+    if (day < 365) return `${Math.floor(day / 30)}ヶ月前`;
+    return `${Math.floor(day / 365)}年前`;
+}
+
 window.renderGallery = async function () {
     const list = document.getElementById('gallery-list');
     if (!list) return;
 
     list.innerHTML = '<div style="text-align:center; grid-column: 1/-1;">読み込み中...</div>';
+    document.getElementById('gallery-stats').style.display = 'none';
+    document.getElementById('gallery-filters').style.display = 'none';
 
     try {
         const sessions = await window.AppStorage.getSessions();
         const allYakumans = [];
-
         sessions.forEach(s => {
-            s.games.forEach(g => {
-                g.players.forEach(p => {
+            (s.games || []).forEach(g => {
+                (g.players || []).forEach(p => {
                     if (p.yakuman && Array.isArray(p.yakuman)) {
                         p.yakuman.forEach(y => {
-                            // Enrich data if needed
-                            if (!y.timestamp) y.timestamp = s.date; // Fallback
+                            if (!y.timestamp) y.timestamp = s.date;
                             allYakumans.push(y);
                         });
                     }
                 });
             });
         });
+        allYakumans.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
 
-        // Sort desc
-        allYakumans.sort((a, b) => b.timestamp - a.timestamp);
-
-        list.innerHTML = '';
         if (allYakumans.length === 0) {
-            list.innerHTML = '<div style="text-align:center; grid-column: 1/-1; color: #94a3b8;">まだ役満の記録がありません。<br>対局中に「🌸 役満達成」ボタンから登録できます。</div>';
+            document.getElementById('gallery-dex').style.display = 'none';
+            list.innerHTML = renderGalleryEmpty();
             return;
         }
 
-        allYakumans.forEach(y => {
-            const dateStr = new Date(y.timestamp).toLocaleDateString();
-            const item = document.createElement('div');
-            item.style.cssText = 'background: #1e293b; border-radius: 8px; border: 1px solid #334155; overflow: hidden; display: flex; flex-direction: column;';
+        // --- Stats ---
+        const stats = computeGalleryStats(allYakumans);
+        document.getElementById('gallery-stat-total').textContent = stats.total;
+        document.getElementById('gallery-stat-achievers').textContent = stats.achievers;
+        document.getElementById('gallery-stat-top-type').textContent = stats.topType || '—';
+        document.getElementById('gallery-stat-last').textContent = stats.lastRelative;
+        document.getElementById('gallery-stats').style.display = '';
 
-            // imageUrl（旧）または imagePath（Base64/新）のどちらかを使う
-            // data: または http で始まる場合のみ有効な画像として扱う（旧Firebase Storageパスは除外）
-            const rawImage = y.imageUrl || y.imagePath || null;
-            const displayImage = (rawImage && (rawImage.startsWith('data:') || rawImage.startsWith('http')))
-                ? rawImage
-                : null;
+        // --- Dex ---
+        const typeCounts = {};
+        allYakumans.forEach(y => { if (y.type) typeCounts[y.type] = (typeCounts[y.type] || 0) + 1; });
+        renderYakumanDex(typeCounts);
+        document.getElementById('gallery-dex').style.display = '';
 
-            let imgHtml = '';
-            if (displayImage) {
-                imgHtml = `<div style="height: 120px; background: url('${displayImage}') center/cover no-repeat; cursor: pointer;" onclick="openImageViewer('${displayImage}')"></div>`;
-            } else {
-                imgHtml = `<div style="height: 120px; background: rgba(255,255,255,0.05); display: flex; align-items: center; justify-content: center; font-size: 2rem;">🀄</div>`;
-            }
+        // --- Avatars ---
+        const uniquePlayers = Array.from(new Set(allYakumans.map(y => y.playerName).filter(Boolean)));
+        await ensureAvatarsLoaded(uniquePlayers);
 
-            item.innerHTML = `
-                 ${imgHtml}
-                 <div style="padding: 10px;">
-                     <div style="font-size: 0.8rem; color: #94a3b8; margin-bottom: 4px;">${dateStr}</div>
-                     <div style="font-weight: bold; color: #fbbf24; font-size: 1.1rem; margin-bottom: 4px;">${y.type}</div>
-                     <div style="font-size: 0.9rem; font-weight: bold; margin-bottom: 4px;">${y.playerName}</div>
-                     <div style="font-size: 0.8rem; color: #cbd5e1; word-break: break-all;">${y.comment || ''}</div>
-                 </div>
-             `;
-            list.appendChild(item);
-        });
+        // --- Filters ---
+        buildGalleryFilters(allYakumans);
+        document.getElementById('gallery-filters').style.display = '';
+
+        // --- Apply filters & render ---
+        renderGalleryCards(allYakumans);
 
     } catch (e) {
         console.error(e);
         list.innerHTML = '<div style="text-align:center; grid-column: 1/-1;">エラーが発生しました</div>';
     }
 };
+
+function computeGalleryStats(yakumans) {
+    const players = new Set();
+    const typeCount = {};
+    yakumans.forEach(y => {
+        if (y.playerName) players.add(y.playerName);
+        if (y.type) typeCount[y.type] = (typeCount[y.type] || 0) + 1;
+    });
+    let topType = null, topN = 0;
+    Object.entries(typeCount).forEach(([t, n]) => {
+        if (n > topN) { topType = t; topN = n; }
+    });
+    const lastTs = yakumans[0] && yakumans[0].timestamp;
+    return {
+        total: yakumans.length,
+        achievers: players.size,
+        topType: topType ? `${topType}` : null,
+        lastRelative: formatRelativeJa(lastTs)
+    };
+}
+
+function buildGalleryFilters(yakumans) {
+    const deviceUser = localStorage.getItem('deviceUser');
+
+    // Count occurrences for chip labels
+    const playerCounts = {};
+    const typeCounts = {};
+    yakumans.forEach(y => {
+        if (y.playerName) playerCounts[y.playerName] = (playerCounts[y.playerName] || 0) + 1;
+        if (y.type) typeCounts[y.type] = (typeCounts[y.type] || 0) + 1;
+    });
+
+    // Player chips: すべて → 自分 → 他プレイヤー（達成回数降順）
+    const playersWrap = document.getElementById('gallery-filter-players');
+    const playerChips = [];
+    playerChips.push({ value: 'all', label: 'すべて', count: yakumans.length });
+    if (deviceUser && playerCounts[deviceUser]) {
+        playerChips.push({ value: deviceUser, label: `自分（${deviceUser}）`, count: playerCounts[deviceUser] });
+    }
+    Object.entries(playerCounts)
+        .filter(([name]) => name !== deviceUser)
+        .sort(([, a], [, b]) => b - a)
+        .forEach(([name, n]) => playerChips.push({ value: name, label: name, count: n }));
+
+    playersWrap.innerHTML = playerChips.map(c => `
+        <button type="button" class="gallery-chip${galleryState.player === c.value ? ' is-active' : ''}"
+            data-filter="player" data-value="${escapeHtml(c.value)}">
+            ${escapeHtml(c.label)}<span class="gallery-chip__count">${c.count}</span>
+        </button>
+    `).join('');
+
+    // Type chips: すべて → 達成回数降順
+    const typesWrap = document.getElementById('gallery-filter-types');
+    const typeChips = [{ value: 'all', label: 'すべて', count: yakumans.length }];
+    Object.entries(typeCounts)
+        .sort(([, a], [, b]) => b - a)
+        .forEach(([t, n]) => typeChips.push({ value: t, label: t, count: n }));
+
+    typesWrap.innerHTML = typeChips.map(c => `
+        <button type="button" class="gallery-chip${galleryState.type === c.value ? ' is-active' : ''}"
+            data-filter="type" data-value="${escapeHtml(c.value)}">
+            ${escapeHtml(c.label)}<span class="gallery-chip__count">${c.count}</span>
+        </button>
+    `).join('');
+
+    // Wire up clicks (delegated once per render is fine since we replace innerHTML)
+    [playersWrap, typesWrap].forEach(wrap => {
+        wrap.querySelectorAll('.gallery-chip').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const k = btn.dataset.filter;
+                galleryState[k] = btn.dataset.value;
+                wrap.querySelectorAll('.gallery-chip').forEach(b => b.classList.toggle('is-active', b === btn));
+                // Re-render cards only
+                renderGalleryCards(window._galleryAll || []);
+            });
+        });
+    });
+
+    // Cache for re-render
+    window._galleryAll = yakumans;
+}
+
+function buildGalleryCard(y) {
+    const dateStr = formatCardDate(y.timestamp);
+    const rawImage = y.imageUrl || y.imagePath || null;
+    const displayImage = (rawImage && (rawImage.startsWith('data:') || rawImage.startsWith('http'))) ? rawImage : null;
+    const style = YAKUMAN_STYLE[y.type] || YAKUMAN_DEFAULT_STYLE;
+
+    const card = document.createElement('div');
+    card.className = 'gallery-card';
+
+    let mediaHtml;
+    if (displayImage) {
+        const escapedUrl = escapeHtml(displayImage).replace(/'/g, '%27');
+        mediaHtml = `<div class="gallery-card__media" style="background-image: url('${escapedUrl}');"></div>`;
+    } else {
+        mediaHtml = `<div class="gallery-card__media gallery-card__media--placeholder" style="background: ${style.gradient};">
+            <span class="gallery-card__placeholder-shine" aria-hidden="true"></span>
+            <span class="gallery-card__placeholder-glyph" aria-hidden="true">${style.glyph}</span>
+        </div>`;
+    }
+
+    card.innerHTML = `
+        ${mediaHtml}
+        <div class="gallery-card__body">
+            <div class="gallery-card__date">${escapeHtml(dateStr)}</div>
+            <div class="gallery-card__type">${escapeHtml(y.type || '')}</div>
+            <div class="gallery-card__player-row">
+                ${renderAvatarHtml(y.playerName)}
+                <span class="gallery-card__player">${escapeHtml(y.playerName || '')}</span>
+            </div>
+            ${y.comment ? `<div class="gallery-card__comment">${escapeHtml(y.comment)}</div>` : ''}
+        </div>
+    `;
+
+    // Whole card is clickable to open detail
+    card.style.cursor = 'pointer';
+    card.addEventListener('click', () => openYakumanDetail(y));
+
+    return card;
+}
+
+function renderGalleryCards(yakumans) {
+    const list = document.getElementById('gallery-list');
+    if (!list) return;
+
+    const filtered = yakumans.filter(y => {
+        if (galleryState.player !== 'all' && y.playerName !== galleryState.player) return false;
+        if (galleryState.type !== 'all' && y.type !== galleryState.type) return false;
+        return true;
+    });
+
+    if (filtered.length === 0) {
+        list.innerHTML = `<div style="grid-column:1/-1; padding: 30px; text-align:center; color: var(--text-secondary); border: 1px dashed rgba(255,255,255,0.1); border-radius: 12px;">
+            この絞り込みに該当する記録はありません
+        </div>`;
+        return;
+    }
+
+    list.innerHTML = '';
+    const months = groupByMonth(filtered);
+    months.forEach(group => {
+        const wrap = document.createElement('div');
+        wrap.className = 'gallery-month-group';
+        const header = document.createElement('div');
+        header.className = 'gallery-month-group__header';
+        header.innerHTML = `<span>${group.year}年${group.month}月</span><span class="gallery-month-group__count">${group.items.length}件</span>`;
+        const grid = document.createElement('div');
+        grid.className = 'gallery-month-group__grid';
+        group.items.forEach(y => grid.appendChild(buildGalleryCard(y)));
+        wrap.appendChild(header);
+        wrap.appendChild(grid);
+        list.appendChild(wrap);
+    });
+}
+
+// --- Yakuman Detail Modal ---
+function openYakumanDetail(y) {
+    const modal = document.getElementById('yakuman-detail-modal');
+    if (!modal) return;
+
+    const rawImage = y.imageUrl || y.imagePath || null;
+    const displayImage = (rawImage && (rawImage.startsWith('data:') || rawImage.startsWith('http'))) ? rawImage : null;
+    const style = YAKUMAN_STYLE[y.type] || YAKUMAN_DEFAULT_STYLE;
+
+    const hero = document.getElementById('yakuman-detail-hero');
+    if (displayImage) {
+        hero.className = 'yakuman-detail__hero';
+        hero.style.background = `#000 url('${escapeHtml(displayImage).replace(/'/g, '%27')}') center/cover no-repeat`;
+        hero.innerHTML = '';
+    } else {
+        hero.className = 'yakuman-detail__hero yakuman-detail__hero--placeholder';
+        hero.style.background = style.gradient;
+        hero.innerHTML = `<span class="yakuman-detail__hero-glyph">${style.glyph}</span>`;
+    }
+
+    document.getElementById('yakuman-detail-type').textContent = y.type || '';
+    document.getElementById('yakuman-detail-avatar').innerHTML = renderAvatarHtml(y.playerName, 'lg');
+    document.getElementById('yakuman-detail-player').textContent = y.playerName || '';
+
+    const dateEl = document.getElementById('yakuman-detail-date');
+    if (y.timestamp) {
+        const full = new Date(y.timestamp).toLocaleDateString('ja-JP', { year: 'numeric', month: 'long', day: 'numeric', weekday: 'short' });
+        const rel = formatRelativeJa(y.timestamp);
+        dateEl.textContent = `${full}（${rel}）`;
+    } else {
+        dateEl.textContent = '';
+    }
+
+    document.getElementById('yakuman-detail-comment').textContent = y.comment || '';
+
+    modal.style.display = 'flex';
+}
+
+function closeYakumanDetail() {
+    const modal = document.getElementById('yakuman-detail-modal');
+    if (modal) modal.style.display = 'none';
+}
+
+const yakumanDetailCloseBtn = document.getElementById('yakuman-detail-close');
+if (yakumanDetailCloseBtn) {
+    yakumanDetailCloseBtn.addEventListener('click', closeYakumanDetail);
+}
+const yakumanDetailModal = document.getElementById('yakuman-detail-modal');
+if (yakumanDetailModal) {
+    yakumanDetailModal.addEventListener('click', (e) => {
+        if (e.target === yakumanDetailModal) closeYakumanDetail();
+    });
+}
+
+function renderGalleryEmpty() {
+    return `
+        <div class="gallery-empty">
+            <div class="gallery-empty__art" aria-hidden="true">🌸</div>
+            <div class="gallery-empty__title">役満の記録はまだありません</div>
+            <div class="gallery-empty__sub">対局中に役満が出たら、達成の瞬間を写真とともに残しておきましょう。</div>
+            <div class="gallery-empty__steps">
+                <div class="gallery-empty__step"><span class="gallery-empty__step-num">1</span>セット詳細を開く</div>
+                <div class="gallery-empty__step"><span class="gallery-empty__step-num">2</span>「🌸 役満達成」ボタンをタップ</div>
+                <div class="gallery-empty__step"><span class="gallery-empty__step-num">3</span>達成者・役満種類・写真を登録</div>
+            </div>
+        </div>
+    `;
+}
