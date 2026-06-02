@@ -2922,3 +2922,1038 @@ body.auth-fullscreen .sticky-top {
 .yakuman-detail__comment:empty {
     display: none;
 }
+
+/* ============================================
+   League — Hero card / Podium / Self stats
+   ============================================ */
+
+/* List: header with title + inline CTA */
+.league-list-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    margin-bottom: 10px;
+}
+
+.league-list-header h2 {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin: 0;
+}
+
+.league-list-header__cta {
+    flex-shrink: 0;
+    width: auto;
+    padding: 7px 14px;
+    background: linear-gradient(135deg, var(--primary-color), #7c4dff);
+    color: #fff;
+    border: none;
+    border-radius: 999px;
+    font-size: 0.82rem;
+    font-weight: 700;
+    cursor: pointer;
+    transition: transform 0.15s ease, box-shadow 0.15s ease;
+    box-shadow: 0 4px 12px rgba(124, 77, 255, 0.3);
+}
+
+.league-list-header__cta:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 6px 18px rgba(124, 77, 255, 0.45);
+}
+
+/* List: section heading */
+.league-list-heading {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 22px 0 10px;
+    font-size: 0.95rem;
+    color: var(--text-secondary);
+    letter-spacing: 0.02em;
+}
+
+.league-list-heading__bar {
+    width: 3px;
+    height: 16px;
+    border-radius: 2px;
+    background: #10b981;
+}
+
+.league-list-heading__bar--past {
+    background: #64748b;
+}
+
+.league-list-heading__count {
+    font-size: 0.78rem;
+    color: var(--text-secondary);
+    opacity: 0.7;
+    margin-left: 4px;
+}
+
+/* List: hero card (active leagues) */
+.league-hero-card {
+    position: relative;
+    background: linear-gradient(160deg, rgba(187, 134, 252, 0.08), rgba(3, 218, 198, 0.04) 60%, rgba(255, 255, 255, 0.02));
+    border: 1px solid rgba(187, 134, 252, 0.22);
+    border-radius: 14px;
+    padding: 16px;
+    cursor: pointer;
+    overflow: hidden;
+    transition: transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease;
+}
+
+.league-hero-card:hover {
+    transform: translateY(-2px);
+    border-color: rgba(187, 134, 252, 0.45);
+    box-shadow: 0 12px 28px rgba(0, 0, 0, 0.45);
+}
+
+.league-hero-card__head {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+}
+
+.league-hero-card__trophy {
+    flex-shrink: 0;
+    width: 38px;
+    height: 38px;
+    border-radius: 10px;
+    background: linear-gradient(135deg, rgba(255, 215, 61, 0.18), rgba(187, 134, 252, 0.18));
+    border: 1px solid rgba(255, 215, 61, 0.35);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.1rem;
+}
+
+.league-hero-card__title-wrap {
+    flex: 1;
+    min-width: 0;
+}
+
+.league-hero-card__title {
+    margin: 0;
+    font-size: 1.05rem;
+    font-weight: 700;
+    color: var(--text-primary);
+    line-height: 1.3;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
+    -webkit-box-orient: vertical;
+}
+
+.league-hero-card__meta {
+    margin-top: 3px;
+    font-size: 0.72rem;
+    color: var(--text-secondary);
+}
+
+.league-pill {
+    flex-shrink: 0;
+    padding: 3px 10px;
+    border-radius: 999px;
+    font-size: 0.68rem;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+}
+
+.league-pill--active {
+    background: rgba(16, 185, 129, 0.18);
+    color: #34d399;
+    border: 1px solid rgba(16, 185, 129, 0.4);
+}
+
+.league-pill--completed {
+    background: rgba(100, 116, 139, 0.18);
+    color: #94a3b8;
+    border: 1px solid rgba(100, 116, 139, 0.4);
+}
+
+/* List: progress */
+.league-progress {
+    margin-top: 12px;
+}
+
+.league-progress__label {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    font-size: 0.74rem;
+    color: var(--text-secondary);
+    margin-bottom: 5px;
+}
+
+.league-progress__value {
+    color: var(--text-primary);
+    font-weight: 700;
+}
+
+.league-progress__bar {
+    height: 7px;
+    background: rgba(255, 255, 255, 0.06);
+    border-radius: 999px;
+    overflow: hidden;
+}
+
+.league-progress__fill {
+    height: 100%;
+    background: linear-gradient(90deg, #bb86fc, #03dac6);
+    border-radius: 999px;
+    transition: width 0.4s ease;
+}
+
+/* Avatar stack (overlapping circles) */
+.league-avatar-stack {
+    display: flex;
+    align-items: center;
+    margin-top: 10px;
+}
+
+.league-avatar-stack__list {
+    display: flex;
+    align-items: center;
+}
+
+.league-avatar-stack__list .gallery-avatar {
+    border: 2px solid var(--bg-color);
+    margin-left: -6px;
+}
+
+.league-avatar-stack__list .gallery-avatar:first-child {
+    margin-left: 0;
+}
+
+.league-avatar-stack__count {
+    margin-left: 8px;
+    font-size: 0.74rem;
+    color: var(--text-secondary);
+}
+
+/* Hero leader / self rows */
+.league-hero-card__rows {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    margin-top: 12px;
+    padding-top: 12px;
+    border-top: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.league-hero-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 6px 8px;
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.02);
+}
+
+.league-hero-row--leader {
+    background: linear-gradient(90deg, rgba(255, 215, 61, 0.1), rgba(255, 215, 61, 0.02));
+    border: 1px solid rgba(255, 215, 61, 0.18);
+}
+
+.league-hero-row--self {
+    background: linear-gradient(90deg, rgba(3, 218, 198, 0.1), rgba(3, 218, 198, 0.02));
+    border: 1px solid rgba(3, 218, 198, 0.22);
+}
+
+.league-hero-row__badge {
+    flex-shrink: 0;
+    font-size: 0.7rem;
+    color: var(--text-secondary);
+    white-space: nowrap;
+    letter-spacing: 0.02em;
+}
+
+.league-hero-row__name {
+    flex: 1;
+    min-width: 0;
+    font-size: 0.9rem;
+    font-weight: 600;
+    color: var(--text-primary);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.league-hero-row__score {
+    flex-shrink: 0;
+    font-size: 0.95rem;
+    font-weight: 800;
+    font-variant-numeric: tabular-nums;
+}
+
+.league-hero-row__score--pos { color: #4ade80; }
+.league-hero-row__score--neg { color: #ef4444; }
+
+.league-hero-row__diff {
+    flex-shrink: 0;
+    font-size: 0.7rem;
+    color: var(--text-secondary);
+    margin-left: 6px;
+}
+
+/* Recent 5 games dots */
+.league-recent {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-top: 10px;
+    font-size: 0.72rem;
+    color: var(--text-secondary);
+}
+
+.league-recent__dots {
+    display: inline-flex;
+    gap: 4px;
+}
+
+.league-recent__dot {
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.55rem;
+    font-weight: 700;
+    color: #0f172a;
+}
+
+.league-recent__dot--top {
+    background: linear-gradient(135deg, #ffd93d, #ffa726);
+    box-shadow: 0 0 0 1px rgba(255, 215, 61, 0.5);
+}
+
+.league-recent__dot--mid {
+    background: rgba(148, 163, 184, 0.7);
+    color: #0f172a;
+}
+
+.league-recent__dot--last {
+    background: rgba(239, 68, 68, 0.85);
+    color: #fff;
+}
+
+.league-recent__dot--empty {
+    background: rgba(255, 255, 255, 0.06);
+    border: 1px dashed rgba(255, 255, 255, 0.15);
+}
+
+.league-recent__sum {
+    font-weight: 700;
+    color: var(--text-primary);
+    font-variant-numeric: tabular-nums;
+}
+
+/* Past-league compact row */
+.league-past-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 12px;
+    background: rgba(255, 255, 255, 0.02);
+    border: 1px solid rgba(255, 255, 255, 0.05);
+    border-radius: 10px;
+    cursor: pointer;
+    transition: background 0.15s ease, border-color 0.15s ease;
+    margin-bottom: 8px;
+}
+
+.league-past-row:hover {
+    background: rgba(255, 255, 255, 0.04);
+    border-color: rgba(255, 255, 255, 0.1);
+}
+
+.league-past-row__title {
+    flex: 1;
+    min-width: 0;
+    font-size: 0.9rem;
+    font-weight: 600;
+    color: var(--text-primary);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.league-past-row__date {
+    flex-shrink: 0;
+    font-size: 0.7rem;
+    color: var(--text-secondary);
+}
+
+/* Empty list state */
+.league-empty {
+    text-align: center;
+    padding: 28px 16px;
+    background: rgba(255, 255, 255, 0.02);
+    border: 1px dashed rgba(255, 255, 255, 0.08);
+    border-radius: 12px;
+    color: var(--text-secondary);
+    font-size: 0.85rem;
+}
+
+.league-empty__glyph {
+    font-size: 1.8rem;
+    margin-bottom: 6px;
+}
+
+/* ============================================
+   League Detail — Hero panel / Self stats / Podium
+   ============================================ */
+
+.league-detail-toolbar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 14px;
+}
+
+.league-detail-toolbar__back {
+    background: none;
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    color: var(--text-secondary);
+    padding: 6px 12px;
+    border-radius: 8px;
+    font-size: 0.82rem;
+    cursor: pointer;
+    transition: background 0.15s ease, color 0.15s ease;
+}
+
+.league-detail-toolbar__back:hover {
+    background: rgba(255, 255, 255, 0.05);
+    color: var(--text-primary);
+}
+
+.league-detail-toolbar__spacer { flex: 1; }
+
+.league-detail-toolbar__danger {
+    background: none;
+    border: 1px solid rgba(239, 68, 68, 0.4);
+    color: #f87171;
+    padding: 5px 10px;
+    border-radius: 8px;
+    font-size: 0.75rem;
+    cursor: pointer;
+    transition: background 0.15s ease;
+}
+
+.league-detail-toolbar__danger:hover {
+    background: rgba(239, 68, 68, 0.12);
+}
+
+.league-detail-hero {
+    position: relative;
+    background: linear-gradient(160deg, rgba(187, 134, 252, 0.1), rgba(3, 218, 198, 0.04) 65%, rgba(255, 255, 255, 0.02));
+    border: 1px solid rgba(187, 134, 252, 0.22);
+    border-radius: 14px;
+    padding: 16px 16px 18px;
+    margin-bottom: 16px;
+}
+
+.league-detail-hero__title-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.league-detail-hero__title {
+    flex: 1;
+    min-width: 0;
+    margin: 0;
+    font-size: 1.15rem;
+    font-weight: 800;
+    color: var(--text-primary);
+    line-height: 1.3;
+}
+
+.league-detail-hero__meta {
+    margin-top: 8px;
+    font-size: 0.78rem;
+    color: var(--text-secondary);
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+}
+
+.league-detail-hero__meta-item {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+}
+
+/* Self stat grid (gallery-stat 流用ベース) */
+.league-self-stats {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 8px;
+    margin-top: 14px;
+}
+
+.league-self-stat {
+    padding: 10px 8px;
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 10px;
+    text-align: center;
+}
+
+.league-self-stat--highlight {
+    background: linear-gradient(135deg, rgba(3, 218, 198, 0.14), rgba(187, 134, 252, 0.08));
+    border-color: rgba(3, 218, 198, 0.35);
+}
+
+.league-self-stat__label {
+    font-size: 0.62rem;
+    color: var(--text-secondary);
+    letter-spacing: 0.06em;
+    margin-bottom: 3px;
+    text-transform: uppercase;
+}
+
+.league-self-stat__value {
+    font-size: 1.1rem;
+    font-weight: 800;
+    color: var(--text-primary);
+    font-variant-numeric: tabular-nums;
+    line-height: 1.1;
+}
+
+.league-self-stat__value--pos { color: #4ade80; }
+.league-self-stat__value--neg { color: #ef4444; }
+
+.league-self-stat__unit {
+    font-size: 0.7rem;
+    color: var(--text-secondary);
+    margin-left: 2px;
+    font-weight: 600;
+}
+
+@media (max-width: 480px) {
+    .league-self-stats {
+        grid-template-columns: repeat(2, 1fr);
+    }
+    .league-self-stat__value {
+        font-size: 1rem;
+    }
+}
+
+/* Podium */
+.league-section-title {
+    margin: 22px 0 10px;
+    font-size: 1rem;
+    font-weight: 700;
+    color: var(--text-primary);
+}
+
+.league-podium {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.league-podium__top {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    padding: 14px 16px;
+    background: linear-gradient(135deg, rgba(255, 215, 61, 0.22), rgba(255, 167, 38, 0.08) 60%, rgba(255, 255, 255, 0.02));
+    border: 1px solid rgba(255, 215, 61, 0.45);
+    border-radius: 14px;
+    position: relative;
+    overflow: hidden;
+}
+
+.league-podium__top::after {
+    content: '';
+    position: absolute;
+    top: -20px;
+    right: -20px;
+    width: 90px;
+    height: 90px;
+    background: radial-gradient(circle, rgba(255, 215, 61, 0.25), transparent 70%);
+    pointer-events: none;
+}
+
+.league-podium__medal {
+    flex-shrink: 0;
+    font-size: 1.6rem;
+    line-height: 1;
+}
+
+.league-podium__top .gallery-avatar {
+    width: 52px;
+    height: 52px;
+    font-size: 1.2rem;
+    border: 2px solid rgba(255, 215, 61, 0.55);
+}
+
+.league-podium__top-body {
+    flex: 1;
+    min-width: 0;
+}
+
+.league-podium__top-name {
+    font-size: 1.05rem;
+    font-weight: 800;
+    color: var(--text-primary);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.league-podium__top-score {
+    margin-top: 2px;
+    font-size: 1.3rem;
+    font-weight: 800;
+    color: #fbbf24;
+    font-variant-numeric: tabular-nums;
+    line-height: 1;
+}
+
+.league-podium__top-meta {
+    font-size: 0.72rem;
+    color: var(--text-secondary);
+    margin-top: 4px;
+}
+
+.league-podium__row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+}
+
+.league-podium__slot {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 12px;
+    border-radius: 12px;
+    background: rgba(255, 255, 255, 0.03);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.league-podium__slot--silver {
+    background: linear-gradient(135deg, rgba(203, 213, 225, 0.12), rgba(148, 163, 184, 0.04));
+    border-color: rgba(203, 213, 225, 0.3);
+}
+
+.league-podium__slot--bronze {
+    background: linear-gradient(135deg, rgba(180, 83, 9, 0.18), rgba(120, 53, 15, 0.05));
+    border-color: rgba(180, 83, 9, 0.4);
+}
+
+.league-podium__slot .gallery-avatar {
+    width: 36px;
+    height: 36px;
+    font-size: 0.85rem;
+}
+
+.league-podium__slot-body {
+    flex: 1;
+    min-width: 0;
+}
+
+.league-podium__slot-name {
+    font-size: 0.85rem;
+    font-weight: 700;
+    color: var(--text-primary);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.league-podium__slot-score {
+    margin-top: 2px;
+    font-size: 0.95rem;
+    font-weight: 800;
+    font-variant-numeric: tabular-nums;
+    line-height: 1;
+}
+
+.league-podium__slot-score--pos { color: #4ade80; }
+.league-podium__slot-score--neg { color: #ef4444; }
+
+.league-podium__slot-meta {
+    font-size: 0.66rem;
+    color: var(--text-secondary);
+    margin-top: 2px;
+}
+
+.league-podium__slot-medal {
+    flex-shrink: 0;
+    font-size: 1.15rem;
+    line-height: 1;
+}
+
+/* Ranked list (4位以降) */
+.league-ranked-list {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    margin-top: 10px;
+}
+
+.league-ranked-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 12px;
+    background: rgba(255, 255, 255, 0.02);
+    border: 1px solid rgba(255, 255, 255, 0.05);
+    border-radius: 10px;
+}
+
+.league-ranked-row--self {
+    background: linear-gradient(90deg, rgba(3, 218, 198, 0.08), rgba(3, 218, 198, 0.02));
+    border-color: rgba(3, 218, 198, 0.3);
+}
+
+.league-ranked-row__rank {
+    flex-shrink: 0;
+    width: 22px;
+    text-align: center;
+    font-weight: 800;
+    color: var(--text-secondary);
+    font-size: 0.85rem;
+}
+
+.league-ranked-row .gallery-avatar {
+    width: 30px;
+    height: 30px;
+    font-size: 0.72rem;
+}
+
+.league-ranked-row__name {
+    flex: 1;
+    min-width: 0;
+    font-size: 0.9rem;
+    font-weight: 600;
+    color: var(--text-primary);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.league-ranked-row__score {
+    flex-shrink: 0;
+    font-size: 0.95rem;
+    font-weight: 800;
+    font-variant-numeric: tabular-nums;
+}
+
+.league-ranked-row__score--pos { color: #4ade80; }
+.league-ranked-row__score--neg { color: #ef4444; }
+
+.league-ranked-row__games {
+    flex-shrink: 0;
+    font-size: 0.7rem;
+    color: var(--text-secondary);
+    min-width: 36px;
+    text-align: right;
+}
+
+/* ============================================
+   Chart summary — last game + cumulative per player
+   ============================================ */
+
+.chart-summary {
+    margin-top: 12px;
+    background: rgba(255, 255, 255, 0.02);
+    border: 1px solid rgba(255, 255, 255, 0.05);
+    border-radius: 10px;
+    padding: 10px 12px;
+}
+
+.chart-summary__head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 6px;
+}
+
+.chart-summary__title {
+    font-size: 0.7rem;
+    color: var(--text-secondary);
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+}
+
+.chart-summary__list {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.chart-summary__row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 4px 2px;
+}
+
+.chart-summary__medal {
+    flex-shrink: 0;
+    width: 22px;
+    text-align: center;
+    font-size: 0.95rem;
+    line-height: 1;
+    color: var(--text-secondary);
+    font-weight: 800;
+}
+
+.chart-summary__medal--last {
+    color: #ef4444;
+}
+
+.chart-summary__row .gallery-avatar {
+    width: 22px;
+    height: 22px;
+    font-size: 0.65rem;
+}
+
+.chart-summary__name {
+    flex: 1;
+    min-width: 0;
+    font-size: 0.86rem;
+    font-weight: 600;
+    color: var(--text-primary);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.chart-summary__delta {
+    flex-shrink: 0;
+    font-size: 0.78rem;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+    min-width: 56px;
+    text-align: right;
+    padding: 2px 8px;
+    border-radius: 6px;
+    background: rgba(255, 255, 255, 0.03);
+}
+
+.chart-summary__delta--pos {
+    color: #4ade80;
+    background: rgba(74, 222, 128, 0.08);
+}
+
+.chart-summary__delta--neg {
+    color: #ef4444;
+    background: rgba(239, 68, 68, 0.08);
+}
+
+.chart-summary__delta--none {
+    color: var(--text-secondary);
+    opacity: 0.6;
+}
+
+.chart-summary__total {
+    flex-shrink: 0;
+    font-size: 0.9rem;
+    font-weight: 800;
+    font-variant-numeric: tabular-nums;
+    min-width: 64px;
+    text-align: right;
+}
+
+.chart-summary__total--pos { color: #4ade80; }
+.chart-summary__total--neg { color: #ef4444; }
+
+/* ============================================
+   Rank distribution (HTML segmented bars)
+   ============================================ */
+
+.rank-dist {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    padding: 14px;
+    background: rgba(255, 255, 255, 0.02);
+    border: 1px solid rgba(255, 255, 255, 0.05);
+    border-radius: 12px;
+}
+
+.rank-dist__row {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.rank-dist__head {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.rank-dist__head .gallery-avatar {
+    width: 26px;
+    height: 26px;
+    font-size: 0.7rem;
+}
+
+.rank-dist__name {
+    flex: 1;
+    min-width: 0;
+    font-size: 0.9rem;
+    font-weight: 700;
+    color: var(--text-primary);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.rank-dist__top-rate {
+    flex-shrink: 0;
+    padding: 2px 8px;
+    border-radius: 999px;
+    font-size: 0.7rem;
+    font-weight: 700;
+    background: linear-gradient(135deg, rgba(255, 215, 61, 0.2), rgba(255, 167, 38, 0.08));
+    border: 1px solid rgba(255, 215, 61, 0.4);
+    color: #fbbf24;
+    white-space: nowrap;
+}
+
+.rank-dist__games {
+    flex-shrink: 0;
+    font-size: 0.7rem;
+    color: var(--text-secondary);
+    font-variant-numeric: tabular-nums;
+    min-width: 36px;
+    text-align: right;
+}
+
+.rank-dist__bar {
+    display: flex;
+    width: 100%;
+    height: 26px;
+    border-radius: 8px;
+    overflow: hidden;
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.rank-dist__seg {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.72rem;
+    font-weight: 800;
+    color: #0f172a;
+    overflow: hidden;
+    white-space: nowrap;
+    transition: filter 0.15s ease;
+    position: relative;
+    font-variant-numeric: tabular-nums;
+}
+
+.rank-dist__seg:hover {
+    filter: brightness(1.1);
+}
+
+.rank-dist__seg--1 {
+    background: linear-gradient(135deg, #ffd93d, #ffa726);
+    box-shadow: inset 0 0 0 1px rgba(255, 215, 61, 0.5);
+}
+
+.rank-dist__seg--2 {
+    background: linear-gradient(135deg, #e2e8f0, #94a3b8);
+    box-shadow: inset 0 0 0 1px rgba(203, 213, 225, 0.4);
+}
+
+.rank-dist__seg--3 {
+    background: linear-gradient(135deg, #d97706, #b45309);
+    color: #fff;
+    box-shadow: inset 0 0 0 1px rgba(180, 83, 9, 0.5);
+}
+
+.rank-dist__seg--4 {
+    background: linear-gradient(135deg, #ef4444, #b91c1c);
+    color: #fff;
+    box-shadow: inset 0 0 0 1px rgba(239, 68, 68, 0.5);
+}
+
+.rank-dist__seg--empty {
+    color: var(--text-secondary);
+    font-weight: 600;
+    font-size: 0.74rem;
+    background: transparent;
+}
+
+/* Counts below the bar */
+.rank-dist__counts {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 4px;
+    font-size: 0.66rem;
+}
+
+.rank-dist__count {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    color: var(--text-secondary);
+    justify-content: center;
+}
+
+.rank-dist__count-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 2px;
+    flex-shrink: 0;
+}
+
+.rank-dist__count-dot--1 { background: linear-gradient(135deg, #ffd93d, #ffa726); }
+.rank-dist__count-dot--2 { background: linear-gradient(135deg, #e2e8f0, #94a3b8); }
+.rank-dist__count-dot--3 { background: linear-gradient(135deg, #d97706, #b45309); }
+.rank-dist__count-dot--4 { background: linear-gradient(135deg, #ef4444, #b91c1c); }
+
+.rank-dist__count-val {
+    color: var(--text-primary);
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+}
+
+.rank-dist__count--zero .rank-dist__count-val {
+    color: var(--text-secondary);
+    opacity: 0.5;
+}
+
+/* Empty state for 0 games */
+.rank-dist__empty-label {
+    width: 100%;
+    text-align: center;
+    color: var(--text-secondary);
+    font-size: 0.74rem;
+    font-weight: 600;
+    line-height: 26px;
+}
+
+/* History row avatars */
+.league-history-row__avatars {
+    display: flex;
+    align-items: center;
+    margin-top: 6px;
+}
+
+.league-history-row__avatars .gallery-avatar {
+    width: 20px;
+    height: 20px;
+    font-size: 0.6rem;
+    border: 2px solid var(--bg-color);
+    margin-left: -5px;
+}
+
+.league-history-row__avatars .gallery-avatar:first-child {
+    margin-left: 0;
+}
