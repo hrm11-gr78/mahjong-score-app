@@ -1499,6 +1499,78 @@ function showToast(message, duration = 3000) {
 }
 
 /**
+ * リーグの終了条件（期間）に対局日が収まるか判定する。
+ * - 期間(period)リーグ: 開始日〜終了日（終了日は23:59:59まで）の範囲内なら true。
+ * - 半荘数(count)/条件なしのリーグ: 日付の制約はないので常に true。
+ * @param {object} league
+ * @param {string} dateStr - 対局日（'YYYY-MM-DD' 等）
+ * @returns {boolean}
+ */
+function leagueAcceptsDate(league, dateStr) {
+    const rule = league && league.rule;
+    if (!rule || rule.type !== 'period') return true;
+    if (!rule.start || !rule.end) return true; // 期間が未設定なら制約しない
+    const d = new Date(dateStr);
+    if (isNaN(d.getTime())) return true; // 日付不正時は弾かない（従来挙動を維持）
+    const start = new Date(rule.start);
+    const end = new Date(rule.end);
+    end.setHours(23, 59, 59, 999);
+    return d >= start && d <= end;
+}
+
+/**
+ * 複数のリーグ候補から、記録先を1つ選ばせる確認ダイアログを表示する。
+ * @param {Array<object>} candidates - 一致したリーグの配列
+ * @returns {Promise<string|null>} 選択されたリーグID。スキップ/キャンセル時は null。
+ */
+function chooseLeagueDialog(candidates) {
+    return new Promise((resolve) => {
+        const fmtRule = (l) => (window.League && typeof window.League.formatRule === 'function')
+            ? window.League.formatRule(l.rule)
+            : '';
+        const dialog = document.createElement('dialog');
+        dialog.className = 'choose-league-modal';
+        dialog.innerHTML = `
+            <div class="choose-league-modal__head">
+                <span class="choose-league-modal__icon">🏆</span>
+                <h3 class="choose-league-modal__title">記録するリーグを選択</h3>
+            </div>
+            <p class="choose-league-modal__desc">この対局は複数のリーグの条件に一致します。記録するリーグを選んでください。</p>
+            <div class="choose-league-modal__list">
+                ${candidates.map(l => `
+                    <button type="button" class="choose-league-modal__item" data-id="${escapeHtml(String(l.id))}">
+                        <span class="choose-league-modal__item-title">${escapeHtml(l.title || '(無題)')}</span>
+                        <span class="choose-league-modal__item-meta">📅 ${escapeHtml(fmtRule(l))} ・ 👥 ${l.players.length}名</span>
+                    </button>
+                `).join('')}
+            </div>
+            <div class="choose-league-modal__footer">
+                <button type="button" class="btn-secondary" data-action="none">どれにも記録しない</button>
+            </div>
+        `;
+        document.body.appendChild(dialog);
+
+        let settled = false;
+        const cleanup = (val) => {
+            if (settled) return;
+            settled = true;
+            try { dialog.close(); } catch (_) {}
+            dialog.remove();
+            resolve(val);
+        };
+
+        dialog.querySelectorAll('.choose-league-modal__item').forEach(btn => {
+            btn.addEventListener('click', () => cleanup(btn.dataset.id));
+        });
+        dialog.querySelector('[data-action="none"]').addEventListener('click', () => cleanup(null));
+        // ESC キーや backdrop でのキャンセルは「記録しない」扱い
+        dialog.addEventListener('cancel', (e) => { e.preventDefault(); cleanup(null); });
+
+        dialog.showModal();
+    });
+}
+
+/**
  * ボタンのローディング状態を切り替えるユーティリティ
  * @param {HTMLElement} btn - 対象ボタン
  * @param {boolean} isLoading - trueで処理中状態、falseで元に戻す
@@ -3000,16 +3072,28 @@ if (sessionSetupForm) {
             try {
                 if (window.AppStorage.getLeagues) {
                     const leagues = await window.AppStorage.getLeagues();
-                    const activeLeague = leagues.find(l =>
+                    // Candidate = active league that contains all 4 players, and (for period
+                    // leagues) whose date range includes this session's date.
+                    const candidates = leagues.filter(l =>
                         l.status === 'active' &&
-                        l.players.length >= 4 &&
-                        players.every(p => l.players.includes(p))
+                        Array.isArray(l.players) && l.players.length >= 4 &&
+                        players.every(p => l.players.includes(p)) &&
+                        leagueAcceptsDate(l, getDate)
                     );
 
-                    if (activeLeague) {
-                        await window.AppStorage.updateSession(session.id, { leagueId: activeLeague.id });
+                    let target = null;
+                    if (candidates.length === 1) {
+                        target = candidates[0];
+                    } else if (candidates.length > 1) {
+                        // Multiple leagues match → let the user pick (or skip).
+                        const chosenId = await chooseLeagueDialog(candidates);
+                        target = chosenId ? candidates.find(l => l.id === chosenId) : null;
+                    }
+
+                    if (target) {
+                        await window.AppStorage.updateSession(session.id, { leagueId: target.id });
                         if (typeof showToast === 'function') {
-                            showToast(`リーグ「${activeLeague.title}」の対局として記録しました。`);
+                            showToast(`リーグ「${target.title}」の対局として記録しました。`);
                         }
                     }
                 }

@@ -134,6 +134,17 @@ window.League = {
         const currentUser = localStorage.getItem('deviceUser');
         const canEdit = this.isParticipant(league);
 
+        // Advanced analytics (Tier 1 features) — computed once, cached for radar/share.
+        const adv = this.computeAdvanced(league, leagueSessions);
+        this._style = this.computeStyleMetrics(stats, adv);
+        this._adv = adv;
+        this._lastLeague = league;
+        this._lastSessions = leagueSessions;
+        this._lastStats = stats;
+        const styleDefault = this._style.active.includes(currentUser)
+            ? currentUser
+            : (this._style.active[0] || null);
+
         const isPast = league.status === 'completed';
         const pillCls = isPast ? 'league-pill--completed' : 'league-pill--active';
         const pillText = isPast ? '終了' : '開催中';
@@ -147,6 +158,7 @@ window.League = {
             <div class="league-detail-toolbar">
                 <button onclick="League.renderList(document.getElementById('league-section'))" class="league-detail-toolbar__back">&lt; 一覧へ</button>
                 <div class="league-detail-toolbar__spacer"></div>
+                ${adv.totalGames > 0 ? `<button onclick="League.shareSeasonImage()" class="league-detail-toolbar__share">📸 シェア</button>` : ''}
                 ${canEdit ? `<button onclick="League.deleteLeague('${leagueId}')" class="league-detail-toolbar__danger">削除</button>` : ''}
             </div>
 
@@ -168,6 +180,12 @@ window.League = {
             <!-- Podium -->
             <h3 class="league-section-title">順位</h3>
             ${this.renderPodium(stats, currentUser)}
+
+            <!-- Title race & comeback simulator -->
+            ${this.renderTitleRace(league, stats, adv)}
+
+            <!-- Rivalry map -->
+            ${this.renderRivalry(league, stats, adv, currentUser)}
 
             <!-- Detailed Stats Grid (kept) -->
             <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 20px; margin-top: 24px;">
@@ -227,6 +245,9 @@ window.League = {
                 </div>
             </div>
 
+            <!-- Play-style diagnosis -->
+            ${this.renderPlayStyle(styleDefault)}
+
             <!-- Rank Distribution -->
             <h3 class="league-section-title">順位分布</h3>
             ${this.renderRankDistribution(stats)}
@@ -259,6 +280,9 @@ window.League = {
 
         // Render Chart
         this.renderChart(stats, leagueSessions, league.players, this.currentChartMode);
+
+        // Render play-style radar for the default player
+        if (styleDefault) this.renderStyleRadar(styleDefault);
     },
 
     // Compact summary row shown right below the trend chart.
@@ -682,41 +706,83 @@ window.League = {
 
     getCreateModalHtml: function () {
         return `
-            <dialog id="create-league-modal" style="background: #1e293b; color: #fff; border: 1px solid #475569; border-radius: 8px; padding: 20px; width: 95%; max-width: 500px; ::backdrop { background: rgba(0,0,0,0.7); }">
-                <h3 style="margin-top: 0;">新しいリーグを作成</h3>
-                <div style="margin-bottom: 15px;">
-                    <label style="display: block; margin-bottom: 5px; font-size: 0.9rem;">リーグ名</label>
-                    <input type="text" id="league-title-input" placeholder="例: 2026年 第1期リーグ" style="width: 100%; padding: 8px; background: #0f172a; color: #fff; border: 1px solid #334155; border-radius: 4px;">
+            <dialog id="create-league-modal" class="lc-modal">
+                <div class="lc-modal__head">
+                    <span class="lc-modal__head-icon">🏆</span>
+                    <h3 class="lc-modal__title">新しいリーグを作成</h3>
+                    <button type="button" class="lc-modal__close" onclick="document.getElementById('create-league-modal').close()" aria-label="閉じる">✕</button>
                 </div>
 
-                <div style="margin-bottom: 15px;">
-                    <label style="display: block; margin-bottom: 5px; font-size: 0.9rem;">参加メンバー (4名)</label>
-                    <div id="league-player-select" style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; background: #0f172a; padding: 10px; border-radius: 4px; max-height: 150px; overflow-y: auto;">
-                        <!-- JS populated -->
+                <div class="lc-modal__body">
+                    <!-- リーグ名 -->
+                    <div class="lc-field">
+                        <div class="lc-field__label-row">
+                            <label class="lc-field__label" for="league-title-input">リーグ名</label>
+                        </div>
+                        <input type="text" id="league-title-input" class="lc-input" placeholder="例: 2026年 第1期リーグ" oninput="League.updatePreview()">
+                        <div class="lc-error" id="league-title-error">リーグ名を入力してください</div>
                     </div>
-                </div>
 
-                <div style="margin-bottom: 15px;">
-                    <label style="display: block; margin-bottom: 5px; font-size: 0.9rem;">終了条件</label>
-                    <div style="display: flex; gap: 10px; margin-bottom: 8px;">
-                        <select id="league-rule-type" onchange="League.toggleRuleInput()" style="padding: 8px; background: #0f172a; color: #fff; border: 1px solid #334155; border-radius: 4px;">
-                            <option value="count">半荘数</option>
-                            <option value="period">期間</option>
-                        </select>
-                        <input type="number" id="league-rule-value-num" placeholder="回数 (例: 50)" style="flex: 1; min-width: 120px; padding: 8px; background: #0f172a; color: #fff; border: 1px solid #334155; border-radius: 4px;">
+                    <!-- 参加メンバー -->
+                    <div class="lc-field">
+                        <div class="lc-field__label-row">
+                            <label class="lc-field__label">参加メンバー</label>
+                            <span class="lc-count-badge" id="league-member-count">0名選択中</span>
+                        </div>
+                        <div class="lc-chips" id="league-member-chips">
+                            <span class="lc-chips__empty">下から4〜20名を選択してください</span>
+                        </div>
+                        <div class="lc-search">
+                            <span class="lc-search__icon">🔍</span>
+                            <input type="text" id="league-member-search" class="lc-input" placeholder="メンバーを検索…" oninput="League.filterMembers(this.value)">
+                        </div>
+                        <div id="league-player-select" class="lc-members">
+                            <!-- JS populated -->
+                        </div>
+                        <div class="lc-error" id="league-member-error">メンバーは4名以上選択してください</div>
+                    </div>
 
-                        <!-- Period Inputs -->
-                        <div id="league-rule-period-inputs" style="flex: 2; display: none; gap: 5px; align-items: center;">
-                            <input type="date" id="league-rule-value-start-date" title="開始日" style="flex: 1; padding: 8px; background: #0f172a; color: #fff; border: 1px solid #334155; border-radius: 4px;">
-                            <span>~</span>
-                            <input type="date" id="league-rule-value-end-date" title="終了日" style="flex: 1; padding: 8px; background: #0f172a; color: #fff; border: 1px solid #334155; border-radius: 4px;">
+                    <!-- 終了条件 -->
+                    <div class="lc-field">
+                        <div class="lc-field__label-row">
+                            <label class="lc-field__label">終了条件</label>
+                        </div>
+                        <div class="lc-seg" id="league-rule-seg">
+                            <button type="button" class="lc-seg__btn lc-seg__btn--active" data-rule="count" onclick="League.setRuleType('count')">半荘数</button>
+                            <button type="button" class="lc-seg__btn" data-rule="period" onclick="League.setRuleType('period')">期間</button>
+                        </div>
+
+                        <!-- 半荘数 -->
+                        <div id="league-rule-count-input" class="lc-rule-suffix">
+                            <input type="number" id="league-rule-value-num" class="lc-input" placeholder="例: 50" min="1" oninput="League.updatePreview()">
+                            <span class="lc-rule-suffix__unit">半荘で終了</span>
+                        </div>
+
+                        <!-- 期間 -->
+                        <div id="league-rule-period-inputs" class="lc-rule-period" style="display: none;">
+                            <input type="date" id="league-rule-value-start-date" class="lc-input" title="開始日" oninput="League.updatePreview()">
+                            <span class="lc-rule-period__sep">~</span>
+                            <input type="date" id="league-rule-value-end-date" class="lc-input" title="終了日" oninput="League.updatePreview()">
+                        </div>
+                        <div class="lc-error" id="league-rule-error"></div>
+                    </div>
+
+                    <!-- プレビュー -->
+                    <div class="lc-preview">
+                        <div class="lc-preview__head">
+                            <span>🏆</span>
+                            <span class="lc-preview__title lc-preview__title--placeholder" id="league-preview-title">リーグ名未入力</span>
+                        </div>
+                        <div class="lc-preview__meta">
+                            <span id="league-preview-members">👥 0名</span>
+                            <span id="league-preview-rule">📅 終了条件 未設定</span>
                         </div>
                     </div>
                 </div>
 
-                <div style="display: flex; justify-content: flex-end; gap: 10px; margin-top: 20px;">
-                    <button onclick="document.getElementById('create-league-modal').close()" class="btn-secondary">キャンセル</button>
-                    <button onclick="League.submitCreate()" class="btn-primary">作成</button>
+                <div class="lc-footer">
+                    <button type="button" onclick="document.getElementById('create-league-modal').close()" class="btn-secondary">キャンセル</button>
+                    <button type="button" id="league-create-submit" onclick="League.submitCreate()" class="lc-btn-create" disabled>作成</button>
                 </div>
             </dialog>
         `;
@@ -724,62 +790,274 @@ window.League = {
 
     // --- Logic ---
 
+    // --- Create modal state ---
+    _allUsers: [],
+    _selectedMembers: [],
+    _ruleType: 'count',
+
     showCreateModal: async function () {
         const modal = document.getElementById('create-league-modal');
-        const playerContainer = document.getElementById('league-player-select');
 
-        // Populate players
-        const users = await window.AppStorage.getUsers();
-        playerContainer.innerHTML = users.map(u => `
-            <label style="display: grid; grid-template-columns: auto 1fr; align-items: center; gap: 8px; font-size: 0.9rem; cursor: pointer; padding: 6px; background: rgba(255,255,255,0.05); border-radius: 4px; transition: background 0.2s;">
-                <input type="checkbox" name="league-players" value="${u}" style="transform: scale(1.1);">
-                <span style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0;">${u}</span>
-            </label>
-        `).join('');
+        // Reset state
+        this._selectedMembers = [];
+        this._ruleType = 'count';
+
+        // Reset inputs
+        document.getElementById('league-title-input').value = '';
+        document.getElementById('league-member-search').value = '';
+        document.getElementById('league-rule-value-num').value = '';
+        document.getElementById('league-rule-value-start-date').value = '';
+        document.getElementById('league-rule-value-end-date').value = '';
+        this.setRuleType('count');
+        this.clearError('league-title-error', 'league-title-input');
+        this.clearError('league-member-error');
+        this.clearError('league-rule-error');
+
+        // Load users + their avatars
+        this._allUsers = await window.AppStorage.getUsers();
+        await this.ensureAvatars(this._allUsers);
+
+        this.renderMemberTiles('');
+        this.renderChips();
+        this.updateMemberCount();
+        this.updatePreview();
 
         modal.showModal();
     },
 
-    toggleRuleInput: function () {
-        const type = document.getElementById('league-rule-type').value;
-        const numInput = document.getElementById('league-rule-value-num');
-        const periodInputs = document.getElementById('league-rule-period-inputs');
+    // Build the member tile grid, optionally filtered by query
+    renderMemberTiles: function (query) {
+        const container = document.getElementById('league-player-select');
+        if (!container) return;
+        const q = (query || '').trim().toLowerCase();
+        const list = this._allUsers.filter(u => !q || String(u).toLowerCase().includes(q));
 
-        if (type === 'period') {
-            numInput.style.display = 'none';
-            numInput.value = '';
-            periodInputs.style.display = 'flex';
-        } else {
-            numInput.style.display = 'block';
-            periodInputs.style.display = 'none';
-            document.getElementById('league-rule-value-start-date').value = '';
-            document.getElementById('league-rule-value-end-date').value = '';
+        if (list.length === 0) {
+            container.innerHTML = `<div class="lc-members__empty">${q ? '該当するメンバーがいません' : 'メンバーがいません'}</div>`;
+            return;
         }
+
+        container.innerHTML = list.map(u => {
+            const selected = this._selectedMembers.includes(u);
+            return `
+                <div class="lc-member ${selected ? 'lc-member--selected' : ''}" data-name="${this.escape(u)}" onclick="League.toggleMember('${this.escapeAttr(u)}')">
+                    ${this.avatarHtml(u)}
+                    <span class="lc-member__name">${this.escape(u)}</span>
+                    <span class="lc-member__check">✓</span>
+                </div>
+            `;
+        }).join('');
+    },
+
+    filterMembers: function (query) {
+        this.renderMemberTiles(query);
+    },
+
+    toggleMember: function (name) {
+        const idx = this._selectedMembers.indexOf(name);
+        if (idx >= 0) {
+            this._selectedMembers.splice(idx, 1);
+        } else {
+            this._selectedMembers.push(name);
+        }
+        // Re-render the tile state without losing the current search filter
+        const search = document.getElementById('league-member-search');
+        this.renderMemberTiles(search ? search.value : '');
+        this.renderChips();
+        this.updateMemberCount();
+        this.updatePreview();
+        if (this._selectedMembers.length >= 4) this.clearError('league-member-error');
+    },
+
+    removeMember: function (name) {
+        const idx = this._selectedMembers.indexOf(name);
+        if (idx >= 0) this._selectedMembers.splice(idx, 1);
+        const search = document.getElementById('league-member-search');
+        this.renderMemberTiles(search ? search.value : '');
+        this.renderChips();
+        this.updateMemberCount();
+        this.updatePreview();
+    },
+
+    renderChips: function () {
+        const chips = document.getElementById('league-member-chips');
+        if (!chips) return;
+        if (this._selectedMembers.length === 0) {
+            chips.innerHTML = `<span class="lc-chips__empty">下から4名以上を選択してください</span>`;
+            return;
+        }
+        chips.innerHTML = this._selectedMembers.map(name => `
+            <span class="lc-chip">
+                ${this.avatarHtml(name)}
+                <span>${this.escape(name)}</span>
+                <button type="button" class="lc-chip__remove" onclick="League.removeMember('${this.escapeAttr(name)}')" aria-label="${this.escape(name)} を外す">✕</button>
+            </span>
+        `).join('');
+    },
+
+    updateMemberCount: function () {
+        const badge = document.getElementById('league-member-count');
+        const submit = document.getElementById('league-create-submit');
+        const n = this._selectedMembers.length;
+        const ok = n >= 4;
+        if (badge) {
+            badge.textContent = `${n}名選択中`;
+            badge.classList.toggle('lc-count-badge--ok', ok);
+        }
+        if (submit) submit.disabled = !this.isFormValid();
+    },
+
+    setRuleType: function (type) {
+        this._ruleType = type;
+        const seg = document.getElementById('league-rule-seg');
+        if (seg) {
+            seg.querySelectorAll('.lc-seg__btn').forEach(btn => {
+                btn.classList.toggle('lc-seg__btn--active', btn.dataset.rule === type);
+            });
+        }
+        const countInput = document.getElementById('league-rule-count-input');
+        const periodInputs = document.getElementById('league-rule-period-inputs');
+        if (type === 'period') {
+            if (countInput) countInput.style.display = 'none';
+            if (periodInputs) periodInputs.style.display = 'flex';
+        } else {
+            if (countInput) countInput.style.display = 'flex';
+            if (periodInputs) periodInputs.style.display = 'none';
+        }
+        this.clearError('league-rule-error');
+        this.updatePreview();
+    },
+
+    // Backwards-compat alias (in case anything else calls it)
+    toggleRuleInput: function () {
+        this.setRuleType(this._ruleType === 'period' ? 'count' : 'period');
+    },
+
+    // Live preview card
+    updatePreview: function () {
+        const title = (document.getElementById('league-title-input')?.value || '').trim();
+        const titleEl = document.getElementById('league-preview-title');
+        if (titleEl) {
+            if (title) {
+                titleEl.textContent = title;
+                titleEl.classList.remove('lc-preview__title--placeholder');
+            } else {
+                titleEl.textContent = 'リーグ名未入力';
+                titleEl.classList.add('lc-preview__title--placeholder');
+            }
+        }
+
+        const membersEl = document.getElementById('league-preview-members');
+        if (membersEl) membersEl.textContent = `👥 ${this._selectedMembers.length}名`;
+
+        const ruleEl = document.getElementById('league-preview-rule');
+        if (ruleEl) {
+            let ruleText = '📅 終了条件 未設定';
+            if (this._ruleType === 'count') {
+                const v = document.getElementById('league-rule-value-num')?.value;
+                if (v) ruleText = `📅 全 ${v} 半荘`;
+            } else {
+                const s = document.getElementById('league-rule-value-start-date')?.value;
+                const e = document.getElementById('league-rule-value-end-date')?.value;
+                if (s && e) {
+                    ruleText = `📅 ${new Date(s).toLocaleDateString()} ~ ${new Date(e).toLocaleDateString()}`;
+                }
+            }
+            ruleEl.textContent = ruleText;
+        }
+
+        const submit = document.getElementById('league-create-submit');
+        if (submit) submit.disabled = !this.isFormValid();
+    },
+
+    isFormValid: function () {
+        const title = (document.getElementById('league-title-input')?.value || '').trim();
+        if (!title) return false;
+        if (this._selectedMembers.length < 4) return false;
+        if (this._ruleType === 'count') {
+            const v = document.getElementById('league-rule-value-num')?.value;
+            if (!v || Number(v) < 1) return false;
+        } else {
+            const s = document.getElementById('league-rule-value-start-date')?.value;
+            const e = document.getElementById('league-rule-value-end-date')?.value;
+            if (!s || !e || s > e) return false;
+        }
+        return true;
+    },
+
+    showError: function (errorId, inputId) {
+        const err = document.getElementById(errorId);
+        if (err) err.classList.add('lc-error--show');
+        if (inputId) {
+            const input = document.getElementById(inputId);
+            if (input) input.classList.add('lc-input--error');
+        }
+    },
+
+    clearError: function (errorId, inputId) {
+        const err = document.getElementById(errorId);
+        if (err) err.classList.remove('lc-error--show');
+        if (inputId) {
+            const input = document.getElementById(inputId);
+            if (input) input.classList.remove('lc-input--error');
+        }
+    },
+
+    // Escape a string for safe use inside a single-quoted JS string in an inline handler
+    escapeAttr: function (s) {
+        return String(s ?? '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
     },
 
     submitCreate: async function () {
         const title = document.getElementById('league-title-input').value.trim();
-        const playerChecks = document.querySelectorAll('input[name="league-players"]:checked');
-        const players = Array.from(playerChecks).map(c => c.value);
-
-        const ruleType = document.getElementById('league-rule-type').value;
+        const players = [...this._selectedMembers];
+        const ruleType = this._ruleType;
         const rule = { type: ruleType };
+
+        // Inline validation
+        let valid = true;
+        this.clearError('league-title-error', 'league-title-input');
+        this.clearError('league-member-error');
+        this.clearError('league-rule-error');
+
+        if (!title) {
+            this.showError('league-title-error', 'league-title-input');
+            valid = false;
+        }
+        if (players.length < 4) {
+            this.showError('league-member-error');
+            valid = false;
+        }
 
         if (ruleType === 'period') {
             const start = document.getElementById('league-rule-value-start-date').value;
             const end = document.getElementById('league-rule-value-end-date').value;
-            if (!start || !end) return alert("期間（開始日・終了日）を入力してください");
-            if (start > end) return alert("開始日は終了日より前である必要があります");
-            rule.start = start;
-            rule.end = end;
+            const ruleErr = document.getElementById('league-rule-error');
+            if (!start || !end) {
+                if (ruleErr) ruleErr.textContent = '期間（開始日・終了日）を入力してください';
+                this.showError('league-rule-error');
+                valid = false;
+            } else if (start > end) {
+                if (ruleErr) ruleErr.textContent = '開始日は終了日より前にしてください';
+                this.showError('league-rule-error');
+                valid = false;
+            } else {
+                rule.start = start;
+                rule.end = end;
+            }
         } else {
             const val = document.getElementById('league-rule-value-num').value;
-            if (!val) return alert("回数を入力してください");
-            rule.value = val;
+            const ruleErr = document.getElementById('league-rule-error');
+            if (!val || Number(val) < 1) {
+                if (ruleErr) ruleErr.textContent = '半荘数を入力してください';
+                this.showError('league-rule-error');
+                valid = false;
+            } else {
+                rule.value = val;
+            }
         }
 
-        if (!title) return alert("リーグ名を入力してください");
-        if (players.length < 4) return alert("メンバーは4名以上選択してください");
+        if (!valid) return;
 
         const newLeague = await window.AppStorage.addLeague({
             title,
@@ -1084,20 +1362,485 @@ window.League = {
     },
 
 
+    // ============================================================
+    //  Advanced analytics (Tier 1 features)
+    // ============================================================
+
+    // Walk every game once and derive: pairwise head-to-head, per-player
+    // finalScore list, max single-game swing, leader timeline, biggest hit.
+    computeAdvanced: function (league, sessions) {
+        const players = league.players || [];
+        const h2h = {};         // h2h[a][b] = { win, loss }
+        const scoreList = {};   // name -> [finalScore, ...]
+        players.forEach(p => { h2h[p] = {}; scoreList[p] = []; });
+
+        const sorted = [...sessions].sort((x, y) => this.compareSessionsAsc(x, y));
+        const flatGames = [];
+        sorted.forEach(s => (s.games || []).forEach(g => flatGames.push(g)));
+
+        let maxSwing = 0;
+        let maxHit = { name: null, score: -Infinity };
+        const running = {};
+        players.forEach(p => running[p] = 0);
+        const leadTimeline = []; // { game: idx(1-based), leader }
+        let prevLeader = null;
+
+        flatGames.forEach((g, gi) => {
+            const ranked = [...g.players].sort((a, b) => b.finalScore - a.finalScore);
+            if (ranked.length) {
+                const sw = ranked[0].finalScore - ranked[ranked.length - 1].finalScore;
+                if (sw > maxSwing) maxSwing = sw;
+            }
+            // head-to-head: every higher-ranked player beats every lower one
+            for (let i = 0; i < ranked.length; i++) {
+                for (let j = i + 1; j < ranked.length; j++) {
+                    const hi = ranked[i].name, lo = ranked[j].name;
+                    if (!h2h[hi] || !h2h[lo]) continue; // league members only
+                    h2h[hi][lo] = h2h[hi][lo] || { win: 0, loss: 0 };
+                    h2h[lo][hi] = h2h[lo][hi] || { win: 0, loss: 0 };
+                    h2h[hi][lo].win++;
+                    h2h[lo][hi].loss++;
+                }
+            }
+            g.players.forEach(gp => {
+                if (scoreList[gp.name]) scoreList[gp.name].push(gp.finalScore);
+                if (running[gp.name] !== undefined) running[gp.name] += gp.finalScore;
+                if (gp.finalScore > maxHit.score) maxHit = { name: gp.name, score: gp.finalScore };
+            });
+            // current leader among players who have played at least once
+            let leader = null, best = -Infinity;
+            players.forEach(p => {
+                if (scoreList[p].length > 0 && running[p] > best) { best = running[p]; leader = p; }
+            });
+            if (leader && leader !== prevLeader) {
+                leadTimeline.push({ game: gi + 1, leader });
+                prevLeader = leader;
+            }
+        });
+
+        return { h2h, scoreList, maxSwing, maxHit, leadTimeline, totalGames: flatGames.length };
+    },
+
+    stdev: function (arr) {
+        if (!arr || arr.length < 2) return 0;
+        const m = arr.reduce((a, b) => a + b, 0) / arr.length;
+        const v = arr.reduce((a, b) => a + (b - m) * (b - m), 0) / arr.length;
+        return Math.sqrt(v);
+    },
+
+    // Most-contested opponent for a given player: many shared games + even record.
+    findRival: function (focus, h2h) {
+        const table = h2h[focus];
+        if (!table) return null;
+        let best = null, bestScore = -Infinity;
+        Object.keys(table).forEach(o => {
+            const r = table[o];
+            const total = r.win + r.loss;
+            if (total < 1) return;
+            const score = total - Math.abs(r.win - r.loss); // favor many + balanced
+            if (score > bestScore) { bestScore = score; best = { name: o, win: r.win, loss: r.loss, total }; }
+        });
+        return best;
+    },
+
+    // League-wide most-contested pair (for the share card).
+    leagueRivalPair: function (h2h, players) {
+        let best = null, bestScore = -Infinity;
+        for (let i = 0; i < players.length; i++) {
+            for (let j = i + 1; j < players.length; j++) {
+                const a = players[i], b = players[j];
+                const r = h2h[a] && h2h[a][b];
+                if (!r) continue;
+                const total = r.win + r.loss;
+                if (total < 2) continue;
+                const score = total - Math.abs(r.win - r.loss);
+                if (score > bestScore) { bestScore = score; best = { a, b, aWin: r.win, bWin: r.loss, total }; }
+            }
+        }
+        return best;
+    },
+
+    // ---------- Feature 1: Rivalry map ----------
+
+    renderRivalry: function (league, stats, adv, currentUser) {
+        if (adv.totalGames === 0) return '';
+        const players = (league.players || []);
+        const active = stats.filter(s => s.games > 0);
+        if (active.length < 2) return '';
+
+        // Focus = current user if they actually played, else the leader.
+        const focus = active.some(s => s.name === currentUser) ? currentUser : active[0].name;
+        const rival = this.findRival(focus, adv.h2h);
+
+        let rivalCard = '';
+        if (rival) {
+            const focusStat = stats.find(s => s.name === focus);
+            const rivalStat = stats.find(s => s.name === rival.name);
+            const scoreDiff = focusStat && rivalStat ? (focusStat.score - rivalStat.score) : 0;
+            const diffSign = scoreDiff > 0 ? '+' : '';
+            const wl = rival.win > rival.loss ? 'rival-card__wl--win' : (rival.win < rival.loss ? 'rival-card__wl--lose' : '');
+            rivalCard = `
+                <div class="rival-card">
+                    <div class="rival-card__head">⚔️ ${this.escape(focus === currentUser ? 'あなた' : focus)} の宿命のライバル</div>
+                    <div class="rival-card__vs">
+                        <div class="rival-card__side">
+                            ${this.avatarHtml(focus, 'lg')}
+                            <span class="rival-card__name">${this.escape(focus)}</span>
+                        </div>
+                        <div class="rival-card__center">
+                            <div class="rival-card__record ${wl}">${rival.win} <span>勝</span> ${rival.loss} <span>敗</span></div>
+                            <div class="rival-card__meta">同卓 ${rival.total} 局 ・ スコア差 ${diffSign}${scoreDiff.toFixed(1)}</div>
+                        </div>
+                        <div class="rival-card__side">
+                            ${this.avatarHtml(rival.name, 'lg')}
+                            <span class="rival-card__name">${this.escape(rival.name)}</span>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
+        // Head-to-head matrix (row beats column). Win=green, loss=red.
+        const names = active.map(s => s.name);
+        const headCols = names.map(n => `<th class="h2h__col">${this.avatarHtml(n)}</th>`).join('');
+        const bodyRows = names.map(rowName => {
+            const cells = names.map(colName => {
+                if (rowName === colName) return `<td class="h2h__cell h2h__cell--self">—</td>`;
+                const r = adv.h2h[rowName] && adv.h2h[rowName][colName];
+                if (!r || (r.win + r.loss) === 0) return `<td class="h2h__cell h2h__cell--none">·</td>`;
+                const cls = r.win > r.loss ? 'h2h__cell--win' : (r.win < r.loss ? 'h2h__cell--lose' : 'h2h__cell--even');
+                return `<td class="h2h__cell ${cls}" title="${this.escape(rowName)} vs ${this.escape(colName)}: ${r.win}勝${r.loss}敗">${r.win}-${r.loss}</td>`;
+            }).join('');
+            return `<tr><th class="h2h__row">${this.avatarHtml(rowName)}<span>${this.escape(rowName)}</span></th>${cells}</tr>`;
+        }).join('');
+
+        return `
+            <h3 class="league-section-title">⚔️ ライバル関係</h3>
+            ${rivalCard}
+            <div class="h2h-wrap">
+                <div class="h2h-scroll">
+                    <table class="h2h">
+                        <thead><tr><th class="h2h__corner">勝-敗</th>${headCols}</tr></thead>
+                        <tbody>${bodyRows}</tbody>
+                    </table>
+                </div>
+                <div class="h2h__legend">行が列に対する成績（<span class="h2h__legend-dot h2h__legend-dot--win"></span>勝ち越し / <span class="h2h__legend-dot h2h__legend-dot--lose"></span>負け越し）</div>
+            </div>
+        `;
+    },
+
+    // ---------- Feature 2: Title race & comeback simulator ----------
+
+    renderTitleRace: function (league, stats, adv) {
+        if (!stats.length || adv.totalGames === 0) return '';
+        const leader = stats[0];
+        const rule = league.rule || {};
+        const maxSwing = adv.maxSwing > 0 ? adv.maxSwing : 50;
+
+        let remainingGames = null;
+        let remainHtml = '';
+        if (rule.type === 'count') {
+            const target = parseInt(rule.value) || 0;
+            remainingGames = Math.max(0, target - adv.totalGames);
+            remainHtml = `<div class="title-race__remain"><span>残り</span><strong>${remainingGames}</strong><span>半荘</span></div>`;
+        } else if (rule.type === 'period' && rule.end) {
+            const end = new Date(rule.end); end.setHours(23, 59, 59, 999);
+            const days = Math.max(0, Math.ceil((end - new Date()) / (1000 * 60 * 60 * 24)));
+            remainHtml = `<div class="title-race__remain"><span>残り</span><strong>${days}</strong><span>日</span></div>`;
+        }
+
+        const rows = stats.slice(0, 5).map((p, i) => {
+            const gap = leader.score - p.score;
+            let status = '', statusCls = '';
+            if (i === 0) {
+                const second = stats[1];
+                if (remainingGames !== null && second && (remainingGames === 0 || (leader.score - second.score) > remainingGames * maxSwing)) {
+                    status = '👑 優勝確定'; statusCls = 'title-race__status--clinched';
+                } else {
+                    status = '首位'; statusCls = 'title-race__status--leader';
+                }
+            } else if (remainingGames !== null) {
+                if (remainingGames === 0 || gap > remainingGames * maxSwing) {
+                    status = '可能性なし'; statusCls = 'title-race__status--out';
+                } else {
+                    status = `逆転まで実質${Math.ceil(gap / maxSwing)}戦`; statusCls = 'title-race__status--alive';
+                }
+            } else {
+                status = '逆転圏内'; statusCls = 'title-race__status--alive';
+            }
+            const sign = p.score > 0 ? '+' : '';
+            const totalCls = p.score >= 0 ? 'title-race__total--pos' : 'title-race__total--neg';
+            const behindHtml = i === 0
+                ? `<span class="title-race__behind title-race__behind--leader">— トップ —</span>`
+                : `<span class="title-race__behind">首位差 <b>-${gap.toFixed(1)}</b></span>`;
+            return `
+                <div class="title-race__row">
+                    <span class="title-race__rank">${i + 1}</span>
+                    ${this.avatarHtml(p.name)}
+                    <span class="title-race__name">${this.escape(p.name)}</span>
+                    <span class="title-race__scores">
+                        <span class="title-race__total ${totalCls}">${sign}${p.score.toFixed(1)}</span>
+                        ${behindHtml}
+                    </span>
+                    <span class="title-race__status ${statusCls}">${status}</span>
+                </div>
+            `;
+        }).join('');
+
+        // Leader timeline strip
+        let timelineHtml = '';
+        if (adv.leadTimeline.length <= 1) {
+            const only = adv.leadTimeline[0];
+            timelineHtml = only ? `<div class="lead-timeline__solo">🏁 第${only.game}戦からずっと <b>${this.escape(only.leader)}</b> が首位</div>` : '';
+        } else {
+            const items = adv.leadTimeline.map((t, idx) => {
+                const next = adv.leadTimeline[idx + 1];
+                const range = next ? `${t.game}〜${next.game - 1}戦` : `${t.game}戦〜`;
+                return `<div class="lead-timeline__node"><span class="lead-timeline__leader">${this.escape(t.leader)}</span><span class="lead-timeline__range">${range}</span></div>`;
+            }).join('<span class="lead-timeline__arrow">→</span>');
+            timelineHtml = `<div class="lead-timeline"><div class="lead-timeline__title">首位の変遷</div><div class="lead-timeline__track">${items}</div></div>`;
+        }
+
+        return `
+            <h3 class="league-section-title">🏁 優勝レース</h3>
+            <div class="title-race">
+                <div class="title-race__head">
+                    ${remainHtml}
+                    <div class="title-race__note">大きい数字は<b>累計スコア</b>。状況欄は最大変動 ${maxSwing.toFixed(1)} と残り試合からの逆転可能性の目安です。</div>
+                </div>
+                <div class="title-race__col-caption">
+                    <span>順位・プレイヤー</span>
+                    <span>累計スコア / 首位差</span>
+                </div>
+                <div class="title-race__list">${rows}</div>
+                ${timelineHtml}
+            </div>
+        `;
+    },
+
+    // ---------- Feature 3: Play-style radar + archetype ----------
+
+    computeStyleMetrics: function (stats, adv) {
+        const active = stats.filter(s => s.games > 0);
+        const raw = {};
+        active.forEach(s => {
+            raw[s.name] = {
+                power: s.maxScore === -Infinity ? 0 : s.maxScore,
+                stability: -this.stdev(adv.scoreList[s.name] || []), // higher (closer to 0) = more stable
+                rentai: parseFloat(s.rentaiRate) || 0,
+                avoidLast: parseFloat(s.avoidLastRate) || 0,
+                top: parseFloat(s.topRate) || 0
+            };
+        });
+        const keys = ['power', 'stability', 'rentai', 'avoidLast', 'top'];
+        const minmax = {};
+        keys.forEach(k => {
+            const vals = active.map(s => raw[s.name][k]);
+            minmax[k] = { min: Math.min(...vals), max: Math.max(...vals) };
+        });
+        const norm = {}, archetype = {};
+        active.forEach(s => {
+            const n = {};
+            keys.forEach(k => {
+                const { min, max } = minmax[k];
+                n[k] = (max === min) ? 50 : ((raw[s.name][k] - min) / (max - min)) * 100;
+            });
+            norm[s.name] = n;
+            archetype[s.name] = this.pickArchetype(n);
+        });
+        return { raw, norm, archetype, active: active.map(s => s.name) };
+    },
+
+    pickArchetype: function (n) {
+        if (n.power >= 66 && n.stability <= 40) return { icon: '💥', label: '一発逆転型' };
+        if (n.stability >= 66 && n.avoidLast >= 55) return { icon: '🛡️', label: '鉄壁の安定型' };
+        if (n.top >= 66) return { icon: '⚔️', label: '攻めの大将' };
+        if (n.rentai >= 66) return { icon: '📈', label: 'コンスタント型' };
+        if (n.avoidLast >= 66) return { icon: '🧱', label: '粘りの守備型' };
+        return { icon: '🎯', label: 'オールラウンダー' };
+    },
+
+    renderPlayStyle: function (defaultName) {
+        if (!this._style || this._style.active.length === 0) return '';
+        const options = this._style.active.map(n =>
+            `<option value="${this.escapeAttr(n)}" ${n === defaultName ? 'selected' : ''}>${this.escape(n)}</option>`
+        ).join('');
+        return `
+            <h3 class="league-section-title">🎯 プレイスタイル診断</h3>
+            <div class="playstyle">
+                <div class="playstyle__bar">
+                    <select id="league-style-select" class="playstyle__select" onchange="League.renderStyleRadar(this.value)">${options}</select>
+                    <span class="playstyle__archetype" id="league-style-archetype"></span>
+                </div>
+                <div class="playstyle__chart"><canvas id="league-style-radar"></canvas></div>
+                <div class="playstyle__hint">各指標はリーグ内の相対値（0〜100）で表示しています。</div>
+            </div>
+        `;
+    },
+
+    renderStyleRadar: function (name) {
+        const ctx = document.getElementById('league-style-radar');
+        if (!ctx || !this._style || !this._style.norm[name]) return;
+        const existing = Chart.getChart(ctx);
+        if (existing) existing.destroy();
+        const n = this._style.norm[name];
+        new Chart(ctx, {
+            type: 'radar',
+            data: {
+                labels: ['火力', '安定感', '連対力', 'ラス回避', '攻撃力'],
+                datasets: [{
+                    label: name,
+                    data: [n.power, n.stability, n.rentai, n.avoidLast, n.top],
+                    backgroundColor: 'rgba(187, 134, 252, 0.25)',
+                    borderColor: '#bb86fc',
+                    borderWidth: 2,
+                    pointBackgroundColor: '#bb86fc',
+                    pointRadius: 3
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: { legend: { display: false }, datalabels: { display: false } },
+                scales: {
+                    r: {
+                        min: 0, max: 100,
+                        ticks: { display: false, stepSize: 25 },
+                        grid: { color: '#334155' },
+                        angleLines: { color: '#334155' },
+                        pointLabels: { color: '#cbd5e1', font: { size: 12 } }
+                    }
+                }
+            }
+        });
+        const arch = this._style.archetype[name];
+        const badge = document.getElementById('league-style-archetype');
+        if (badge && arch) badge.textContent = `${arch.icon} ${arch.label}`;
+    },
+
+    // ---------- Feature 4: Season "Wrapped" share card ----------
+
+    shareSeasonImage: async function () {
+        if (typeof html2canvas === 'undefined') {
+            alert('画像生成ライブラリが読み込まれていません。再読み込みしてください。');
+            return;
+        }
+        const league = this._lastLeague;
+        const stats = this._lastStats;
+        const adv = this._adv;
+        if (!league || !stats || !adv || adv.totalGames === 0) {
+            alert('まだ集計できる対局がありません。');
+            return;
+        }
+
+        const champion = stats[0];
+        const rivalPair = this.leagueRivalPair(adv.h2h, (league.players || []).filter(p => (adv.scoreList[p] || []).length > 0));
+        const top3 = stats.slice(0, 3);
+
+        const card = document.createElement('div');
+        Object.assign(card.style, {
+            position: 'fixed', top: '0', left: '0', width: '1080px', height: '1920px',
+            zIndex: '-9999', background: '#0f172a', color: '#fff',
+            fontFamily: "'Inter', sans-serif", padding: '90px 70px', boxSizing: 'border-box',
+            display: 'flex', flexDirection: 'column',
+            backgroundImage: 'radial-gradient(circle at top right, rgba(187,134,252,0.25), transparent 45%), radial-gradient(circle at bottom left, rgba(3,218,198,0.18), transparent 45%)'
+        });
+
+        const fmtScore = (v) => `${v > 0 ? '+' : ''}${v.toFixed(1)}`;
+        const medal = ['🥇', '🥈', '🥉'];
+
+        card.innerHTML = `
+            <div style="border-bottom: 3px solid #334155; padding-bottom: 36px;">
+                <div style="font-size: 1.9rem; color: #94a3b8; letter-spacing: 6px; font-weight: 600;">LEAGUE WRAPPED</div>
+                <div style="font-size: 4.2rem; font-weight: 900; margin-top: 14px; line-height: 1.15;">${this.escape(league.title)}</div>
+                <div style="font-size: 1.7rem; color: #cbd5e1; margin-top: 16px;">📅 ${this.escape(this.formatRule(league.rule))} ・ 👥 ${league.players.length}名 ・ 🀄 全${adv.totalGames}戦</div>
+            </div>
+
+            <div style="margin-top: 60px; background: linear-gradient(135deg, rgba(251,191,36,0.18), rgba(187,134,252,0.12)); border: 2px solid rgba(251,191,36,0.5); border-radius: 28px; padding: 44px 50px;">
+                <div style="font-size: 1.6rem; color: #fbbf24; letter-spacing: 3px; font-weight: 700;">👑 CHAMPION</div>
+                <div style="display: flex; align-items: center; justify-content: space-between; margin-top: 18px;">
+                    <div style="font-size: 4rem; font-weight: 900;">${this.escape(champion.name)}</div>
+                    <div style="font-size: 3.4rem; font-weight: 800; color: ${champion.score >= 0 ? '#4ade80' : '#f87171'};">${fmtScore(champion.score)}</div>
+                </div>
+                <div style="font-size: 1.5rem; color: #cbd5e1; margin-top: 8px;">${champion.games}戦 ・ 平均順位 ${champion.avgRank} ・ トップ率 ${champion.topRate}</div>
+            </div>
+
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 30px; margin-top: 44px;">
+                <div style="background: rgba(30,41,59,0.6); border: 2px solid #334155; border-radius: 24px; padding: 36px;">
+                    <div style="font-size: 1.4rem; color: #94a3b8;">💥 最大の一撃</div>
+                    <div style="font-size: 3rem; font-weight: 900; color: #4ade80; margin-top: 12px;">${adv.maxHit.score > 0 ? '+' : ''}${adv.maxHit.score.toFixed(1)}</div>
+                    <div style="font-size: 1.7rem; margin-top: 6px;">${this.escape(adv.maxHit.name || '-')}</div>
+                </div>
+                <div style="background: rgba(30,41,59,0.6); border: 2px solid #334155; border-radius: 24px; padding: 36px;">
+                    <div style="font-size: 1.4rem; color: #94a3b8;">⚔️ 宿命のライバル</div>
+                    ${rivalPair
+                        ? `<div style="font-size: 2.1rem; font-weight: 800; margin-top: 12px; line-height:1.3;">${this.escape(rivalPair.a)}<br>vs ${this.escape(rivalPair.b)}</div>
+                           <div style="font-size: 1.5rem; color:#cbd5e1; margin-top: 8px;">通算 ${rivalPair.aWin}-${rivalPair.bWin}（${rivalPair.total}局）</div>`
+                        : `<div style="font-size: 1.6rem; color:#64748b; margin-top: 16px;">データ不足</div>`}
+                </div>
+            </div>
+
+            <div style="margin-top: 48px; flex-grow: 1;">
+                <div style="font-size: 1.5rem; color: #cbd5e1; border-left: 6px solid #a78bfa; padding-left: 18px; font-weight: bold;">FINAL STANDINGS (TOP 3)</div>
+                ${top3.map((p, i) => `
+                    <div style="display:flex; align-items:center; justify-content:space-between; background: rgba(30,41,59,0.5); border:2px solid #334155; border-radius:18px; padding: 26px 36px; margin-top: 20px;">
+                        <div style="display:flex; align-items:center; gap: 26px;">
+                            <span style="font-size: 2.6rem;">${medal[i]}</span>
+                            <span style="font-size: 2.2rem; font-weight: 700;">${this.escape(p.name)}</span>
+                        </div>
+                        <span style="font-size: 2.4rem; font-weight: 800; color:${p.score >= 0 ? '#4ade80' : '#f87171'};">${fmtScore(p.score)}</span>
+                    </div>
+                `).join('')}
+            </div>
+
+            <div style="display:flex; justify-content:space-between; align-items:center; padding-top: 30px; border-top: 2px solid #334155;">
+                <div style="font-size: 1.3rem; color: #64748b;">#雀ログ #リーグ戦</div>
+                <div style="font-size: 1.7rem; font-weight: bold; background: linear-gradient(to right, #c084fc, #6366f1); -webkit-background-clip: text; color: transparent;">Powered by 雀ログ</div>
+            </div>
+        `;
+
+        document.body.appendChild(card);
+        try {
+            const canvas = await html2canvas(card, { backgroundColor: '#0f172a', scale: 2 });
+            const link = document.createElement('a');
+            link.download = `jonglog_league_${(league.title || 'season').replace(/\s+/g, '_')}.png`;
+            link.href = canvas.toDataURL('image/png');
+            link.click();
+        } catch (e) {
+            console.error('Wrapped image generation failed:', e);
+            alert('画像の生成に失敗しました。');
+        } finally {
+            document.body.removeChild(card);
+        }
+    },
+
     getColorForIndex: function (index) {
+        // 24 distinct hues so leagues up to ~20 players keep readable, unique line colors.
         const colors = [
-            '#ef4444',
-            '#3b82f6',
-            '#10b981',
-            '#f59e0b',
-            '#8b5cf6',
-            '#ec4899',
-            '#06b6d4',
-            '#f97316',
-            '#84cc16',
-            '#14b8a6',
-            '#6366f1',
-            '#d946ef'
+            '#ef4444', // red
+            '#3b82f6', // blue
+            '#10b981', // emerald
+            '#f59e0b', // amber
+            '#8b5cf6', // violet
+            '#ec4899', // pink
+            '#06b6d4', // cyan
+            '#f97316', // orange
+            '#84cc16', // lime
+            '#14b8a6', // teal
+            '#6366f1', // indigo
+            '#d946ef', // fuchsia
+            '#dc2626', // dark red
+            '#2563eb', // dark blue
+            '#059669', // dark emerald
+            '#d97706', // dark amber
+            '#7c3aed', // dark violet
+            '#db2777', // dark pink
+            '#0891b2', // dark cyan
+            '#65a30d', // dark lime
+            '#e879f9', // light fuchsia
+            '#22d3ee', // light cyan
+            '#fbbf24', // light amber
+            '#a78bfa'  // light violet
         ];
         return colors[index % colors.length];
     }
