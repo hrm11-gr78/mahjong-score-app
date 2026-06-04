@@ -552,22 +552,80 @@ window.AppStorage.saveSettings = async function (settings) {
     await db.collection("settings").doc("global").set(settings);
 };
 
-// --- Roulette (Local Only) ---
+// --- Roulette Presets (Local Only) ---
+// データモデル: roulettePresets = [{ id, name, mode, items: [{label, weight}] }]
+// 旧形式 'rouletteItems'（文字列配列1個）は初回読込時に自動マイグレーションする。
 
-window.AppStorage.getRouletteItems = async function () {
-    const saved = localStorage.getItem('rouletteItems');
+const ROULETTE_PRESETS_KEY = 'roulettePresets';
+const ROULETTE_LEGACY_KEY = 'rouletteItems';
+const ROULETTE_LAST_KEY = 'roulettePresetLast';
+
+function _rouletteGenId() {
+    return 'rl_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+}
+
+// 任意の項目配列（文字列 or オブジェクト混在）を {label, weight} に正規化
+function _normalizeRouletteItems(arr) {
+    if (!Array.isArray(arr)) return [];
+    return arr.map((it) => {
+        if (it && typeof it === 'object') {
+            return { label: String(it.label ?? ''), weight: Math.max(1, parseInt(it.weight, 10) || 1) };
+        }
+        return { label: String(it), weight: 1 };
+    }).filter((it) => it.label !== '');
+}
+
+window.AppStorage.getRoulettePresets = async function () {
+    const saved = localStorage.getItem(ROULETTE_PRESETS_KEY);
     if (saved) {
         try {
-            return JSON.parse(saved);
+            const parsed = JSON.parse(saved);
+            if (Array.isArray(parsed) && parsed.length) {
+                // 各プリセットの items を正規化して返す
+                return parsed.map((p) => ({
+                    id: p.id || _rouletteGenId(),
+                    name: p.name || 'ルーレット',
+                    mode: p.mode || 'normal',
+                    items: _normalizeRouletteItems(p.items)
+                }));
+            }
         } catch (e) {
-            console.error(e);
+            console.error('getRoulettePresets parse failed:', e);
         }
     }
-    return ['1', '2', '3', '4', '5', '6', '7']; // Default
+
+    // --- 旧形式からのマイグレーション ---
+    let items = [
+        { label: '1', weight: 1 }, { label: '2', weight: 1 }, { label: '3', weight: 1 },
+        { label: '4', weight: 1 }, { label: '5', weight: 1 }, { label: '6', weight: 1 },
+        { label: '7', weight: 1 }
+    ];
+    const legacy = localStorage.getItem(ROULETTE_LEGACY_KEY);
+    if (legacy) {
+        try {
+            const arr = JSON.parse(legacy);
+            const normalized = _normalizeRouletteItems(arr);
+            if (normalized.length) items = normalized;
+        } catch (e) {
+            console.error('legacy roulette migration failed:', e);
+        }
+    }
+
+    const presets = [{ id: _rouletteGenId(), name: 'マイルーレット', mode: 'normal', items }];
+    localStorage.setItem(ROULETTE_PRESETS_KEY, JSON.stringify(presets));
+    return presets;
 };
 
-window.AppStorage.saveRouletteItems = async function (items) {
-    localStorage.setItem('rouletteItems', JSON.stringify(items));
+window.AppStorage.saveRoulettePresets = async function (presets) {
+    localStorage.setItem(ROULETTE_PRESETS_KEY, JSON.stringify(presets));
+};
+
+window.AppStorage.getLastRoulettePresetId = function () {
+    return localStorage.getItem(ROULETTE_LAST_KEY);
+};
+
+window.AppStorage.setLastRoulettePresetId = function (id) {
+    localStorage.setItem(ROULETTE_LAST_KEY, id || '');
 };
 
 // --- Authentication ---
