@@ -710,11 +710,23 @@
                 </div>
 
                 <div class="roulette-setup">
-                    <h3>項目設定 <span style="font-size:0.8rem; font-weight:normal;">(最大20個)</span></h3>
                     <div id="roulette-restriction-msg" class="restricted-access-msg"
                         style="display:none; padding:10px; background:rgba(255,165,0,0.1); border:1px solid orange; border-radius:8px; margin-bottom:20px; color:orange; font-size:0.9rem;">
                         ⚠️ ルーレットを操作するには、ユーザー設定が必要です。
                     </div>
+
+                    <!-- プリセット切替バー -->
+                    <div class="roulette-preset-bar">
+                        <select id="roulette-preset-select" aria-label="ルーレットの切替"></select>
+                        <div class="roulette-preset-actions">
+                            <button id="preset-new" class="btn-icon" title="新規作成">＋</button>
+                            <button id="preset-rename" class="btn-icon" title="名前変更">✎</button>
+                            <button id="preset-duplicate" class="btn-icon" title="複製">⧉</button>
+                            <button id="preset-delete" class="btn-icon" title="削除">🗑</button>
+                        </div>
+                    </div>
+
+                    <h3>項目設定 <span style="font-size:0.8rem; font-weight:normal;">(最大20個・重みで当たりやすさ調整)</span></h3>
                     <div class="form-group" style="display:flex; gap:10px;">
                         <input type="text" id="roulette-input" placeholder="項目を入力 (例: 東場, 南場...)">
                         <button id="add-roulette-item" class="btn-secondary"
@@ -882,6 +894,19 @@
             <h3>同点順位の決定</h3>
             <p>起家(東家)に近いプレイヤーを選択してください。</p>
             <div id="tie-breaker-options"></div>
+        </div>
+    </div>
+
+    <!-- Roulette Name Input Modal (新規作成 / 名前変更) -->
+    <div id="roulette-name-modal" class="modal" style="display: none;">
+        <div class="modal-content">
+            <h3 id="roulette-name-title">ルーレット名</h3>
+            <input type="text" id="roulette-name-input" placeholder="名前を入力" maxlength="30"
+                style="width:100%; padding:10px 12px; border-radius:8px; background-color:#2a2a2a; color:var(--text-primary,#fff); border:1px solid #444; font-size:1rem; box-sizing:border-box;">
+            <div style="display:flex; gap:10px; margin-top:16px;">
+                <button id="roulette-name-cancel" class="btn-secondary" style="flex:1;">キャンセル</button>
+                <button id="roulette-name-ok" class="btn-primary" style="flex:1;">OK</button>
+            </div>
         </div>
     </div>
 

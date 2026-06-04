@@ -67,6 +67,12 @@ const rouletteResult = document.getElementById('roulette-result');
 const rouletteInput = document.getElementById('roulette-input');
 const addRouletteItemBtn = document.getElementById('add-roulette-item');
 const rouletteList = document.getElementById('roulette-list');
+// Preset controls
+const roulettePresetSelect = document.getElementById('roulette-preset-select');
+const presetNewBtn = document.getElementById('preset-new');
+const presetRenameBtn = document.getElementById('preset-rename');
+const presetDuplicateBtn = document.getElementById('preset-duplicate');
+const presetDeleteBtn = document.getElementById('preset-delete');
 
 // State
 let currentSessionId = null;
@@ -75,7 +81,9 @@ let pendingGameData = null; // Store data while waiting for tie-breaker
 let pendingGameYakumans = []; // [NEW] Store yakumans for current game input
 
 // Roulette State
-let rouletteItems = [];
+let roulettePresets = [];      // [{id, name, mode, items:[{label, weight}]}]
+let currentPresetId = null;
+let rouletteItems = [];        // アクティブなプリセットの items への参照
 let isSpinning = false;
 let currentRotation = 0;
 
@@ -484,6 +492,14 @@ function updateActionRestrictions() {
     const rouletteInput = document.getElementById('roulette-input');
     const scoreForm = document.getElementById('score-form');
     const settingsForm = document.getElementById('settings-form');
+    // Roulette preset controls
+    const presetControls = [
+        document.getElementById('roulette-preset-select'),
+        document.getElementById('preset-new'),
+        document.getElementById('preset-rename'),
+        document.getElementById('preset-duplicate'),
+        document.getElementById('preset-delete')
+    ];
 
     // Messages to toggle
     const restrictionMsgs = document.querySelectorAll('.restricted-access-msg');
@@ -495,6 +511,7 @@ function updateActionRestrictions() {
         if (spinBtn) spinBtn.disabled = true;
         if (addRouletteItemBtn) addRouletteItemBtn.disabled = true;
         if (rouletteInput) rouletteInput.disabled = true;
+        presetControls.forEach(el => { if (el) el.disabled = true; });
         if (scoreForm) scoreForm.style.display = 'none';
         if (settingsForm) settingsForm.style.display = 'none';
 
@@ -507,6 +524,7 @@ function updateActionRestrictions() {
         if (spinBtn) spinBtn.disabled = false;
         if (addRouletteItemBtn) addRouletteItemBtn.disabled = false;
         if (rouletteInput) rouletteInput.disabled = false;
+        presetControls.forEach(el => { if (el) el.disabled = false; });
         if (scoreForm) scoreForm.style.display = 'block';
         if (settingsForm) settingsForm.style.display = 'block';
 
@@ -4558,26 +4576,59 @@ async function initRoulette() {
     if (!rouletteCanvas) return;
 
     try {
-        // Load saved items from AppStorage (Async)
-        rouletteItems = await window.AppStorage.getRouletteItems();
-
-        // Items must be array
-        if (!Array.isArray(rouletteItems)) {
-            rouletteItems = ['1', '2', '3', '4', '5', '6', '7'];
-        }
-
+        roulettePresets = await window.AppStorage.getRoulettePresets();
     } catch (e) {
-        console.error("Failed to load roulette items", e);
-        rouletteItems = ['1', '2', '3', '4', '5', '6', '7'];
+        console.error("Failed to load roulette presets", e);
+        roulettePresets = [];
     }
 
+    // 何らかの理由で空ならデフォルトを1つ用意
+    if (!Array.isArray(roulettePresets) || roulettePresets.length === 0) {
+        roulettePresets = [{
+            id: 'rl_default', name: 'マイルーレット', mode: 'normal',
+            items: ['1', '2', '3', '4', '5', '6', '7'].map(l => ({ label: l, weight: 1 }))
+        }];
+    }
+
+    // 前回開いていたプリセットを復元
+    const lastId = window.AppStorage.getLastRoulettePresetId
+        ? window.AppStorage.getLastRoulettePresetId() : null;
+    currentPresetId = (lastId && roulettePresets.some(p => p.id === lastId))
+        ? lastId : roulettePresets[0].id;
+
+    syncItemsFromPreset();
+    renderPresetSelect();
     renderRouletteList();
     drawRoulette();
 }
 
-// Save items to AppStorage
+// アクティブなプリセットを取得
+function getActivePreset() {
+    return roulettePresets.find(p => p.id === currentPresetId) || roulettePresets[0] || null;
+}
+
+// アクティブなプリセットの items を rouletteItems に同期（参照を合わせる）
+function syncItemsFromPreset() {
+    const p = getActivePreset();
+    rouletteItems = p ? p.items : [];
+}
+
+// プリセット全体を永続化
 async function saveRouletteItems() {
-    await window.AppStorage.saveRouletteItems(rouletteItems);
+    await window.AppStorage.saveRoulettePresets(roulettePresets);
+}
+
+// プリセット選択ドロップダウンを再描画
+function renderPresetSelect() {
+    if (!roulettePresetSelect) return;
+    roulettePresetSelect.innerHTML = '';
+    roulettePresets.forEach(p => {
+        const opt = document.createElement('option');
+        opt.value = p.id;
+        opt.textContent = `${p.name}（${p.items.length}）`;
+        roulettePresetSelect.appendChild(opt);
+    });
+    roulettePresetSelect.value = currentPresetId;
 }
 
 // Add roulette item
@@ -4594,14 +4645,15 @@ if (addRouletteItemBtn) {
             return;
         }
 
-        if (rouletteItems.includes(value)) {
+        if (rouletteItems.some(it => it.label === value)) {
             alert('同じ項目が既に存在します。');
             return;
         }
 
-        rouletteItems.push(value);
+        rouletteItems.push({ label: value, weight: 1 });
         await saveRouletteItems(); // Async save
         rouletteInput.value = '';
+        renderPresetSelect();
         renderRouletteList();
         drawRoulette();
     });
@@ -4619,12 +4671,22 @@ if (addRouletteItemBtn) {
 async function removeRouletteItem(index) {
     rouletteItems.splice(index, 1);
     await saveRouletteItems(); // Async save
+    renderPresetSelect();
     renderRouletteList();
     drawRoulette();
 }
-
-// Make removeRouletteItem globally accessible (wrapper to handle async promise if needed, though click handler ignores it)
 window.removeRouletteItem = removeRouletteItem;
+
+// 重み（当たりやすさ）を変更
+async function changeRouletteWeight(index, delta) {
+    const it = rouletteItems[index];
+    if (!it) return;
+    it.weight = Math.max(1, Math.min(20, (it.weight || 1) + delta));
+    await saveRouletteItems();
+    renderRouletteList();
+    drawRoulette();
+}
+window.changeRouletteWeight = changeRouletteWeight;
 
 // Render roulette item list
 function renderRouletteList() {
@@ -4634,15 +4696,159 @@ function renderRouletteList() {
     rouletteItems.forEach((item, index) => {
         const li = document.createElement('li');
         li.innerHTML = `
-            <span>${item}</span>
-            <button onclick="removeRouletteItem(${index})">×</button>
+            <span class="rl-item-label">${escapeHtml(item.label)}</span>
+            <div class="rl-item-weight" title="当たりやすさ（重み）">
+                <button type="button" onclick="changeRouletteWeight(${index}, -1)">−</button>
+                <span class="rl-weight-val">${item.weight || 1}</span>
+                <button type="button" onclick="changeRouletteWeight(${index}, 1)">＋</button>
+            </div>
+            <button type="button" class="rl-item-remove" onclick="removeRouletteItem(${index})">×</button>
         `;
         rouletteList.appendChild(li);
     });
 }
 
+// --- Preset management UI ---
+async function switchPreset(id) {
+    if (!roulettePresets.some(p => p.id === id)) return;
+    currentPresetId = id;
+    if (window.AppStorage.setLastRoulettePresetId) {
+        window.AppStorage.setLastRoulettePresetId(id);
+    }
+    syncItemsFromPreset();
+    renderPresetSelect();
+    renderRouletteList();
+    currentRotation = 0;
+    if (rouletteResult) rouletteResult.innerHTML = '';
+    drawRoulette();
+}
+
+if (roulettePresetSelect) {
+    roulettePresetSelect.addEventListener('change', (e) => switchPreset(e.target.value));
+}
+
+// --- 名前入力モーダル（prompt() の代替。環境依存でダイアログが出ない問題を回避） ---
+const rouletteNameModal = document.getElementById('roulette-name-modal');
+const rouletteNameTitle = document.getElementById('roulette-name-title');
+const rouletteNameInput = document.getElementById('roulette-name-input');
+const rouletteNameOk = document.getElementById('roulette-name-ok');
+const rouletteNameCancel = document.getElementById('roulette-name-cancel');
+let _rouletteNameResolve = null;
+
+function promptRouletteName(title, defaultValue = '') {
+    return new Promise((resolve) => {
+        if (!rouletteNameModal) { resolve(null); return; }
+        _rouletteNameResolve = resolve;
+        rouletteNameTitle.textContent = title;
+        rouletteNameInput.value = defaultValue;
+        rouletteNameModal.style.display = 'flex';
+        setTimeout(() => { rouletteNameInput.focus(); rouletteNameInput.select(); }, 50);
+    });
+}
+
+function _resolveRouletteName(value) {
+    if (rouletteNameModal) rouletteNameModal.style.display = 'none';
+    const r = _rouletteNameResolve;
+    _rouletteNameResolve = null;
+    if (r) r(value);
+}
+
+if (rouletteNameOk) rouletteNameOk.addEventListener('click', () => _resolveRouletteName((rouletteNameInput.value || '').trim()));
+if (rouletteNameCancel) rouletteNameCancel.addEventListener('click', () => _resolveRouletteName(null));
+if (rouletteNameModal) {
+    rouletteNameModal.addEventListener('click', (e) => { if (e.target === rouletteNameModal) _resolveRouletteName(null); });
+}
+if (rouletteNameInput) {
+    rouletteNameInput.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') { e.preventDefault(); _resolveRouletteName((rouletteNameInput.value || '').trim()); }
+        else if (e.key === 'Escape') { e.preventDefault(); _resolveRouletteName(null); }
+    });
+}
+
+if (presetNewBtn) {
+    presetNewBtn.addEventListener('click', async () => {
+        const name = await promptRouletteName('新しいルーレットを作成', '新しいルーレット');
+        if (!name) return;
+        const preset = { id: 'rl_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7), name, mode: 'normal', items: [] };
+        roulettePresets.push(preset);
+        await saveRouletteItems();
+        await switchPreset(preset.id);
+    });
+}
+
+if (presetRenameBtn) {
+    presetRenameBtn.addEventListener('click', async () => {
+        const p = getActivePreset();
+        if (!p) return;
+        const name = await promptRouletteName('ルーレットの名前を変更', p.name);
+        if (!name) return;
+        p.name = name;
+        await saveRouletteItems();
+        renderPresetSelect();
+    });
+}
+
+if (presetDuplicateBtn) {
+    presetDuplicateBtn.addEventListener('click', async () => {
+        const p = getActivePreset();
+        if (!p) return;
+        const copy = {
+            id: 'rl_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7),
+            name: p.name + ' のコピー',
+            mode: p.mode || 'normal',
+            items: p.items.map(it => ({ label: it.label, weight: it.weight || 1 }))
+        };
+        roulettePresets.push(copy);
+        await saveRouletteItems();
+        await switchPreset(copy.id);
+    });
+}
+
+if (presetDeleteBtn) {
+    presetDeleteBtn.addEventListener('click', async () => {
+        const p = getActivePreset();
+        if (!p) return;
+        if (roulettePresets.length <= 1) {
+            alert('最後の1個は削除できません。');
+            return;
+        }
+        if (!confirm(`「${p.name}」を削除しますか？`)) return;
+        roulettePresets = roulettePresets.filter(x => x.id !== p.id);
+        await saveRouletteItems();
+        await switchPreset(roulettePresets[0].id);
+    });
+}
+
+// 重み付きセグメントの境界を計算（0〜2πの非回転座標）
+function computeRouletteSegments() {
+    const total = rouletteItems.reduce((s, i) => s + (i.weight || 1), 0) || 1;
+    let acc = 0;
+    const segs = [];
+    for (let i = 0; i < rouletteItems.length; i++) {
+        const frac = (rouletteItems[i].weight || 1) / total;
+        const start = acc * 2 * Math.PI;
+        acc += frac;
+        const end = acc * 2 * Math.PI;
+        segs.push({ start, end, mid: (start + end) / 2 });
+    }
+    return segs;
+}
+
+// 現在の回転角でポインタ（真上）が指すセグメントindexを返す
+function getRouletteIndexAt(rotation) {
+    const segs = computeRouletteSegments();
+    if (segs.length === 0) return 0;
+    const pointer = -Math.PI / 2;
+    let rel = ((pointer - rotation) % (2 * Math.PI) + 2 * Math.PI) % (2 * Math.PI);
+    for (let i = 0; i < segs.length; i++) {
+        if (rel >= segs[i].start && rel < segs[i].end) return i;
+    }
+    return segs.length - 1;
+}
+
 // Draw roulette wheel
-function drawRoulette(rotation = 0) {
+// highlightIndex >= 0 のとき当選セグメントを発光（glow）、他を暗転（dim 0..1）させる
+function drawRoulette(rotation = 0, highlightIndex = -1, dim = 0, glow = 0) {
     if (!rouletteCtx || rouletteItems.length === 0) return;
 
     const centerX = rouletteCanvas.width / 2;
@@ -4653,7 +4859,8 @@ function drawRoulette(rotation = 0) {
     // Clear canvas
     rouletteCtx.clearRect(0, 0, rouletteCanvas.width, rouletteCanvas.height);
 
-    const anglePerSegment = (2 * Math.PI) / rouletteItems.length;
+    // 重み付きセグメント境界（不均等）
+    const segments = computeRouletteSegments();
 
     // --- 1. Draw Outer Bezel / Shadow ---
     // Drop shadow for the whole wheel
@@ -4689,8 +4896,9 @@ function drawRoulette(rotation = 0) {
 
     // --- 2. Draw Segments ---
     rouletteItems.forEach((item, index) => {
-        const startAngle = rotation + (index * anglePerSegment);
-        const endAngle = startAngle + anglePerSegment;
+        const seg = segments[index];
+        const startAngle = rotation + seg.start;
+        const endAngle = rotation + seg.end;
 
         // Clip to radius
         rouletteCtx.beginPath();
@@ -4720,7 +4928,7 @@ function drawRoulette(rotation = 0) {
         // --- 3. Draw Text ---
         rouletteCtx.save();
         rouletteCtx.translate(centerX, centerY);
-        rouletteCtx.rotate(startAngle + anglePerSegment / 2);
+        rouletteCtx.rotate(rotation + seg.mid);
         rouletteCtx.textAlign = 'center';
         rouletteCtx.textBaseline = 'middle';
 
@@ -4731,13 +4939,53 @@ function drawRoulette(rotation = 0) {
         rouletteCtx.shadowOffsetY = 1;
 
         rouletteCtx.fillStyle = '#fff';
-        // Auto-scale font based on item length
-        const fontSize = Math.min(18, (radius * 0.7) / (item.length * 0.8));
+        // Auto-scale font based on label length
+        const label = item.label != null ? String(item.label) : '';
+        const fontSize = Math.min(18, (radius * 0.7) / (Math.max(1, label.length) * 0.8));
         rouletteCtx.font = `bold ${Math.max(10, fontSize)}px Inter, 'Noto Sans JP', sans-serif`;
 
         // Push text out a bit
-        rouletteCtx.fillText(item, radius * 0.6, 0);
+        rouletteCtx.fillText(label, radius * 0.6, 0);
         rouletteCtx.restore();
+
+        // --- 当選ハイライト / 暗転 ---
+        if (highlightIndex >= 0) {
+            if (index === highlightIndex) {
+                // 当たり: 内側に淡い発光
+                rouletteCtx.save();
+                rouletteCtx.beginPath();
+                rouletteCtx.moveTo(centerX, centerY);
+                rouletteCtx.arc(centerX, centerY, radius, startAngle, endAngle);
+                rouletteCtx.closePath();
+                rouletteCtx.clip();
+                rouletteCtx.fillStyle = `rgba(255,255,255,${0.18 * glow})`;
+                rouletteCtx.fillRect(centerX - radius, centerY - radius, radius * 2, radius * 2);
+                rouletteCtx.restore();
+                // 当たり: 金色の縁取り＋グロー
+                rouletteCtx.save();
+                rouletteCtx.beginPath();
+                rouletteCtx.moveTo(centerX, centerY);
+                rouletteCtx.arc(centerX, centerY, radius, startAngle, endAngle);
+                rouletteCtx.closePath();
+                rouletteCtx.lineWidth = 3;
+                rouletteCtx.strokeStyle = `rgba(255,235,150,${0.4 + 0.6 * glow})`;
+                rouletteCtx.shadowColor = "rgba(255,220,120,0.9)";
+                rouletteCtx.shadowBlur = 20 * glow;
+                rouletteCtx.stroke();
+                rouletteCtx.restore();
+            } else {
+                // 外れ: 暗転
+                rouletteCtx.save();
+                rouletteCtx.beginPath();
+                rouletteCtx.moveTo(centerX, centerY);
+                rouletteCtx.arc(centerX, centerY, radius, startAngle, endAngle);
+                rouletteCtx.closePath();
+                rouletteCtx.clip();
+                rouletteCtx.fillStyle = `rgba(0,0,0,${0.6 * dim})`;
+                rouletteCtx.fillRect(centerX - radius, centerY - radius, radius * 2, radius * 2);
+                rouletteCtx.restore();
+            }
+        }
     });
 
     // --- 4. Center Decoration ---
@@ -4802,7 +5050,8 @@ function initAudio() {
 }
 
 // Play tick sound
-function playTickSound() {
+// tension(0..1) が高いほどピッチを上げ、減速時の緊張感（ドラムロール）を演出
+function playTickSound(tension = 0) {
     if (!audioContext) return;
 
     const oscillator = audioContext.createOscillator();
@@ -4811,7 +5060,8 @@ function playTickSound() {
     oscillator.connect(gainNode);
     gainNode.connect(audioContext.destination);
 
-    oscillator.frequency.value = 800;
+    const tn = Math.min(1, Math.max(0, tension));
+    oscillator.frequency.value = 600 + 600 * tn; // 600Hz → 1200Hz
     oscillator.type = 'square';
 
     gainNode.gain.setValueAtTime(0.1, audioContext.currentTime);
@@ -4843,8 +5093,305 @@ function playResultSound() {
     oscillator.stop(audioContext.currentTime + 0.5);
 }
 
-// Spin roulette
-// Spin roulette
+// --- B3: 触覚フィードバック ---
+function rouletteVibrate(pattern) {
+    try {
+        if (navigator.vibrate) navigator.vibrate(pattern);
+    } catch (e) { /* 非対応端末は無視 */ }
+}
+
+// --- B3: 当たり演出（紙吹雪） ---
+function launchConfetti(opts = {}) {
+    const canvas = document.createElement('canvas');
+    canvas.style.cssText = 'position:fixed;inset:0;width:100%;height:100%;pointer-events:none;z-index:2000;';
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
+    document.body.appendChild(canvas);
+    const ctx = canvas.getContext('2d');
+
+    const colors = opts.colors || ['#bb86fc', '#03dac6', '#cf6679', '#ffb74d', '#f59e0b', '#3b82f6', '#ffffff'];
+    const originX = canvas.width / 2;
+    const originY = canvas.height * 0.38;
+    const particles = [];
+    const N = opts.count || 140;
+    for (let i = 0; i < N; i++) {
+        const angle = Math.random() * Math.PI * 2;
+        const speed = 4 + Math.random() * 9;
+        particles.push({
+            x: originX, y: originY,
+            vx: Math.cos(angle) * speed,
+            vy: Math.sin(angle) * speed - 4,
+            size: 5 + Math.random() * 7,
+            color: colors[(Math.random() * colors.length) | 0],
+            rot: Math.random() * Math.PI,
+            vr: (Math.random() - 0.5) * 0.3
+        });
+    }
+
+    const start = performance.now();
+    const DURATION = 2200;
+    function frame(now) {
+        const elapsed = now - start;
+        const life = Math.max(0, 1 - elapsed / DURATION);
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        particles.forEach(p => {
+            p.vy += 0.18;   // 重力
+            p.vx *= 0.99;
+            p.x += p.vx;
+            p.y += p.vy;
+            p.rot += p.vr;
+            ctx.save();
+            ctx.globalAlpha = life;
+            ctx.translate(p.x, p.y);
+            ctx.rotate(p.rot);
+            ctx.fillStyle = p.color;
+            ctx.fillRect(-p.size / 2, -p.size / 2, p.size, p.size * 0.6);
+            ctx.restore();
+        });
+        if (elapsed < DURATION) {
+            requestAnimationFrame(frame);
+        } else {
+            canvas.remove();
+        }
+    }
+    requestAnimationFrame(frame);
+}
+
+// --- 当選セグメントのハイライト演出（当たりを発光、他を暗転） ---
+function animateSegmentHighlight(winningIndex) {
+    const start = performance.now();
+    const DURATION = 1400;
+    function frame(now) {
+        if (isSpinning) return; // 新しいスピンが始まったら中断
+        const t = Math.min(1, (now - start) / DURATION);
+        const dim = Math.min(1, t * 3);                       // 素早く暗転
+        const glow = 0.5 + 0.5 * Math.abs(Math.sin(t * Math.PI * 3)); // 数回パルス
+        drawRoulette(currentRotation, winningIndex, dim, glow);
+        if (t < 1) requestAnimationFrame(frame);
+        else drawRoulette(currentRotation, winningIndex, 1, 0.65); // 落ち着いた状態で固定
+    }
+    requestAnimationFrame(frame);
+}
+
+// --- 集中線（マンガ風スピードライン） ---
+function launchFocusLines(rare) {
+    const canvas = document.createElement('canvas');
+    canvas.style.cssText = 'position:fixed;inset:0;width:100%;height:100%;pointer-events:none;z-index:1999;';
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
+    document.body.appendChild(canvas);
+    const ctx = canvas.getContext('2d');
+
+    const cx = canvas.width / 2;
+    const cy = canvas.height * 0.38;
+    const maxR = Math.hypot(canvas.width, canvas.height);
+    const N = 50;
+    const start = performance.now();
+    const DUR = 600;
+    function frame(now) {
+        const t = (now - start) / DUR;
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        const alpha = Math.max(0, 1 - t);
+        const inner = 60 + t * 160; // 中心はクリアに保ち、外へ広がる
+        for (let i = 0; i < N; i++) {
+            const a = (i / N) * Math.PI * 2;
+            const wide = (i % 2 === 0) ? 0.014 : 0.007;
+            ctx.beginPath();
+            ctx.moveTo(cx + Math.cos(a) * inner, cy + Math.sin(a) * inner);
+            ctx.lineTo(cx + Math.cos(a - wide) * maxR, cy + Math.sin(a - wide) * maxR);
+            ctx.lineTo(cx + Math.cos(a + wide) * maxR, cy + Math.sin(a + wide) * maxR);
+            ctx.closePath();
+            ctx.fillStyle = rare ? `rgba(255,215,0,${alpha * 0.85})` : `rgba(255,255,255,${alpha * 0.5})`;
+            ctx.fill();
+        }
+        if (t < 1) requestAnimationFrame(frame);
+        else canvas.remove();
+    }
+    requestAnimationFrame(frame);
+}
+
+// --- レア当選のファンファーレ（アルペジオ和音） ---
+function playFanfare() {
+    if (!audioContext) return;
+    const notes = [523.25, 659.25, 783.99, 1046.5]; // C5 E5 G5 C6
+    notes.forEach((f, i) => {
+        const t0 = audioContext.currentTime + i * 0.1;
+        const osc = audioContext.createOscillator();
+        const g = audioContext.createGain();
+        osc.connect(g); g.connect(audioContext.destination);
+        osc.type = 'triangle';
+        osc.frequency.value = f;
+        g.gain.setValueAtTime(0.0001, t0);
+        g.gain.exponentialRampToValueAtTime(0.25, t0 + 0.02);
+        g.gain.exponentialRampToValueAtTime(0.001, t0 + 0.45);
+        osc.start(t0); osc.stop(t0 + 0.5);
+    });
+}
+
+// --- レア予兆（虹×金フラッシュ＋上昇音） ---
+function flashRareOverlay() {
+    const el = document.createElement('div');
+    el.style.cssText = 'position:fixed;inset:0;pointer-events:none;z-index:1998;mix-blend-mode:screen;opacity:0;';
+    el.style.background = 'radial-gradient(circle at 50% 38%, rgba(255,215,0,0.6), rgba(255,0,200,0.35) 40%, rgba(0,200,255,0.25) 70%, transparent 80%)';
+    document.body.appendChild(el);
+    const start = performance.now();
+    const DUR = 900;
+    function frame(now) {
+        const t = (now - start) / DUR;
+        el.style.opacity = String(Math.max(0, Math.sin(t * Math.PI * 3)) * (1 - t * 0.3));
+        if (t < 1) requestAnimationFrame(frame);
+        else el.remove();
+    }
+    requestAnimationFrame(frame);
+
+    // 上昇音
+    if (audioContext) {
+        const osc = audioContext.createOscillator();
+        const g = audioContext.createGain();
+        osc.connect(g); g.connect(audioContext.destination);
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(300, audioContext.currentTime);
+        osc.frequency.exponentialRampToValueAtTime(1200, audioContext.currentTime + 0.85);
+        g.gain.setValueAtTime(0.0001, audioContext.currentTime);
+        g.gain.exponentialRampToValueAtTime(0.2, audioContext.currentTime + 0.1);
+        g.gain.exponentialRampToValueAtTime(0.001, audioContext.currentTime + 0.9);
+        osc.start(); osc.stop(audioContext.currentTime + 0.95);
+    }
+}
+
+// --- ① カウントダウン「3・2・1・GO!」用のビープ ---
+function playCountBeep(isGo) {
+    if (!audioContext) return;
+    const osc = audioContext.createOscillator();
+    const g = audioContext.createGain();
+    osc.connect(g); g.connect(audioContext.destination);
+    osc.type = 'square';
+    osc.frequency.value = isGo ? 880 : 440;
+    const t0 = audioContext.currentTime;
+    g.gain.setValueAtTime(0.0001, t0);
+    g.gain.exponentialRampToValueAtTime(0.18, t0 + 0.02);
+    g.gain.exponentialRampToValueAtTime(0.001, t0 + (isGo ? 0.4 : 0.15));
+    osc.start(t0); osc.stop(t0 + (isGo ? 0.45 : 0.2));
+}
+
+// --- ① カウントダウン演出（完了後に onDone を呼ぶ） ---
+function runCountdown(onDone) {
+    const overlay = document.createElement('div');
+    overlay.style.cssText = 'position:fixed;inset:0;display:flex;align-items:center;justify-content:center;pointer-events:none;z-index:2001;';
+    document.body.appendChild(overlay);
+
+    const steps = ['3', '2', '1', 'GO!'];
+    let i = 0;
+    function showStep() {
+        if (i >= steps.length) {
+            overlay.remove();
+            if (onDone) onDone();
+            return;
+        }
+        const txt = steps[i];
+        const isGo = (txt === 'GO!');
+        const el = document.createElement('div');
+        el.className = 'countdown-num' + (isGo ? ' countdown-go' : '');
+        el.textContent = txt;
+        overlay.innerHTML = '';
+        overlay.appendChild(el);
+        playCountBeep(isGo);
+        i++;
+        setTimeout(showStep, isGo ? 450 : 520);
+    }
+    showStep();
+}
+
+// --- ② 回転中のスパーク＋スポットライト追従 ---
+let wheelFxCanvas = null;
+let wheelFxRunning = false;
+let wheelFxLoopId = 0;
+
+function startWheelSpinFx() {
+    if (!rouletteCanvas) return;
+    const wrap = rouletteCanvas.parentElement;
+    if (!wrap) return;
+    const PAD = 30;
+    if (!wheelFxCanvas) {
+        wheelFxCanvas = document.createElement('canvas');
+        wheelFxCanvas.width = rouletteCanvas.width + PAD * 2;
+        wheelFxCanvas.height = rouletteCanvas.height + PAD * 2;
+        wheelFxCanvas.style.cssText = `position:absolute;top:${-PAD}px;left:${-PAD}px;width:${rouletteCanvas.width + PAD * 2}px;height:${rouletteCanvas.height + PAD * 2}px;pointer-events:none;z-index:3;`;
+        wrap.appendChild(wheelFxCanvas);
+    }
+    const ctx = wheelFxCanvas.getContext('2d');
+    const cx = wheelFxCanvas.width / 2;
+    const cy = wheelFxCanvas.height / 2;
+    const R = 138; // ホイール外周付近
+    const particles = [];
+    let sweep = 0;
+    wheelFxRunning = true;
+    const myId = ++wheelFxLoopId; // 新しいスピンが始まったら旧ループは停止
+
+    function frame() {
+        if (myId !== wheelFxLoopId) return;
+        ctx.clearRect(0, 0, wheelFxCanvas.width, wheelFxCanvas.height);
+
+        // 回転中のみ: スポットライト追従＋スパーク生成（停止後は既存のみ消化）
+        if (wheelFxRunning) {
+            // スポットライト追従（ホイール面を走る光）
+            sweep += 0.16;
+            ctx.save();
+            ctx.beginPath();
+            ctx.arc(cx, cy, R, 0, Math.PI * 2);
+            ctx.clip();
+            ctx.translate(cx, cy);
+            ctx.rotate(sweep);
+            const bx = 0, by = -R * 0.72;
+            const grad = ctx.createRadialGradient(bx, by, 0, bx, by, R * 0.7);
+            grad.addColorStop(0, 'rgba(255,255,255,0.30)');
+            grad.addColorStop(1, 'rgba(255,255,255,0)');
+            ctx.fillStyle = grad;
+            ctx.beginPath();
+            ctx.arc(bx, by, R * 0.7, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.restore();
+
+            // スパーク生成（外周から放射状に）
+            if (Math.random() < 0.7) {
+                const a = Math.random() * Math.PI * 2;
+                const sp = 1.2 + Math.random() * 3;
+                particles.push({
+                    x: cx + Math.cos(a) * R,
+                    y: cy + Math.sin(a) * R,
+                    vx: Math.cos(a) * sp,
+                    vy: Math.sin(a) * sp,
+                    life: 1,
+                    color: Math.random() < 0.5 ? '#ffd54a' : '#03dac6'
+                });
+            }
+        }
+        for (const p of particles) {
+            p.x += p.vx; p.y += p.vy; p.life -= 0.045;
+            ctx.globalAlpha = Math.max(0, p.life);
+            ctx.fillStyle = p.color;
+            ctx.beginPath();
+            ctx.arc(p.x, p.y, 1.8, 0, Math.PI * 2);
+            ctx.fill();
+        }
+        ctx.globalAlpha = 1;
+        for (let k = particles.length - 1; k >= 0; k--) {
+            if (particles[k].life <= 0) particles.splice(k, 1);
+        }
+
+        if (wheelFxRunning || particles.length > 0) {
+            requestAnimationFrame(frame);
+        } else {
+            ctx.clearRect(0, 0, wheelFxCanvas.width, wheelFxCanvas.height);
+        }
+    }
+    requestAnimationFrame(frame);
+}
+
+function stopWheelSpinFx() {
+    wheelFxRunning = false;
+}
+
 // Spin roulette
 if (spinBtn) {
     spinBtn.addEventListener('click', () => {
@@ -4861,7 +5408,16 @@ if (spinBtn) {
         isSpinning = true;
         rouletteResult.textContent = '';
         spinBtn.disabled = true;
+        spinBtn.textContent = "…";
+
+        // ① カウントダウン「3・2・1・GO!」→ 完了後にスピン開始
+        runCountdown(() => {
         spinBtn.textContent = "回転中...";
+        // 回転中はホイールのネオン発光を強める＋スパーク/スポットライト
+        if (rouletteCanvas && rouletteCanvas.parentElement) {
+            rouletteCanvas.parentElement.classList.add('is-spinning');
+        }
+        startWheelSpinFx();
 
         // ---- Animation Configuration & Logic ----
 
@@ -4882,6 +5438,9 @@ if (spinBtn) {
         // effectType = 1; // Force Respin
         // effectType = 2; // Force Slip
         // effectType = 3; // Force Reverse
+
+        // レア「激アツ」演出（ガチャ風）— 低確率で発動
+        const isRare = Math.random() < 0.12;
 
         const startTime = performance.now();
 
@@ -4905,8 +5464,9 @@ if (spinBtn) {
 
         let initialTarget = targetRotation;
 
-        // Sound state
-        let lastTickAngle = startRotation % (Math.PI * 2);
+        // Sound state — セグメント境界をまたぐたびにチック音を鳴らす（重み付き対応）
+        let lastTickSegment = getRouletteIndexAt(startRotation);
+        // 滑り/逆回転エフェクト用の代表的な1セグメント分の角度（近似）
         const tickInterval = (Math.PI * 2) / rouletteItems.length;
 
         function animate(currentTime) {
@@ -4944,14 +5504,14 @@ if (spinBtn) {
         }
 
         function checkTick() {
-            const currentNormalized = currentRotation % (Math.PI * 2);
-            const currentSegment = Math.floor(currentNormalized / tickInterval);
-            const lastSegment = Math.floor(lastTickAngle / tickInterval);
+            const currentSegment = getRouletteIndexAt(currentRotation);
 
-            if (currentSegment !== lastSegment) {
-                playTickSound();
+            if (currentSegment !== lastTickSegment) {
+                // ② ドラムロール: 減速（進行度）に応じてチック音のピッチを上げる
+                const tension = Math.min(1, (performance.now() - startTime) / duration);
+                playTickSound(tension);
             }
-            lastTickAngle = currentNormalized;
+            lastTickSegment = currentSegment;
         }
 
         // --- Effect 1: Respin ---
@@ -5068,44 +5628,67 @@ if (spinBtn) {
 
 
         function finishSpin() {
-            // Reset Button Style
-            spinBtn.style.color = "";
-            spinBtn.textContent = "もう一度回す";
-
-            // Calculate Result
-            const normalizedRotation = (currentRotation % (Math.PI * 2) + Math.PI * 2) % (Math.PI * 2);
-
-            const anglePerSegment = (2 * Math.PI) / rouletteItems.length;
-            const pointerAngle = -Math.PI / 2;
-            let indexFloat = (pointerAngle - normalizedRotation) / anglePerSegment;
-            while (indexFloat < 0) indexFloat += rouletteItems.length;
-
-            const winningIndex = Math.floor(indexFloat) % rouletteItems.length;
+            // Calculate Result（重み付きセグメント対応）
+            const winningIndex = getRouletteIndexAt(currentRotation);
             const winningItem = rouletteItems[winningIndex];
+            const winningLabel = winningItem ? String(winningItem.label) : '';
 
-            // Play Success Sound
-            playResultSound();
+            const finalize = () => {
+                isSpinning = false;
+                spinBtn.disabled = false;
+                spinBtn.style.color = "";
+                spinBtn.textContent = "もう一度回す";
+                if (rouletteCanvas && rouletteCanvas.parentElement) {
+                    rouletteCanvas.parentElement.classList.remove('is-spinning');
+                }
+                stopWheelSpinFx();
+            };
 
-            // Effect badge
-            let effectBadge = "";
-            if (effectType === 1) effectBadge = "<span style='font-size:0.7rem; background:#ff4444; color:white; padding:2px 6px; border-radius:4px; margin-bottom:5px; display:inline-block;'>再始動発動！</span><br>";
-            if (effectType === 2) effectBadge = "<span style='font-size:0.7rem; background:#f59e0b; color:white; padding:2px 6px; border-radius:4px; margin-bottom:5px; display:inline-block;'>滑り発動！</span><br>";
-            if (effectType === 3) effectBadge = "<span style='font-size:0.7rem; background:#3b82f6; color:white; padding:2px 6px; border-radius:4px; margin-bottom:5px; display:inline-block;'>逆回転発動！</span><br>";
+            const reveal = () => {
+                // 当選ハイライト＋集中線
+                animateSegmentHighlight(winningIndex);
+                launchFocusLines(isRare);
 
-            // Show Result
-            rouletteResult.innerHTML = `
-                ${effectBadge}
-                <div style="font-size:0.8rem; color:#888;">RESULT</div>
-                <div style="font-size:1.5rem; font-weight:bold; color:#bb86fc; text-shadow:0 0 10px rgba(187,134,252,0.5);">
-                    ${winningItem}
-                </div>
-            `;
+                // サウンド・触覚・紙吹雪
+                if (isRare) {
+                    playFanfare();
+                    rouletteVibrate([40, 30, 40, 30, 180]);
+                    launchConfetti({ colors: ['#ffd700', '#ff5ec7', '#5ecbff', '#fff7a0', '#ff8a00', '#a0ff8a', '#ffffff'], count: 260 });
+                } else {
+                    playResultSound();
+                    rouletteVibrate([60, 40, 120]);
+                    launchConfetti();
+                }
 
-            isSpinning = false;
-            spinBtn.disabled = false;
+                // Effect badge
+                let effectBadge = "";
+                if (effectType === 1) effectBadge = "<span style='font-size:0.7rem; background:#ff4444; color:white; padding:2px 6px; border-radius:4px; margin-bottom:5px; display:inline-block;'>再始動発動！</span><br>";
+                if (effectType === 2) effectBadge = "<span style='font-size:0.7rem; background:#f59e0b; color:white; padding:2px 6px; border-radius:4px; margin-bottom:5px; display:inline-block;'>滑り発動！</span><br>";
+                if (effectType === 3) effectBadge = "<span style='font-size:0.7rem; background:#3b82f6; color:white; padding:2px 6px; border-radius:4px; margin-bottom:5px; display:inline-block;'>逆回転発動！</span><br>";
+                if (isRare) effectBadge = "<span class='rare-badge'>★ 激アツ ★</span><br>" + effectBadge;
+
+                // Show Result
+                const winnerColor = isRare ? '#ffd700' : '#bb86fc';
+                const winnerShadow = isRare ? '0 0 16px rgba(255,215,0,0.7)' : '0 0 10px rgba(187,134,252,0.5)';
+                const winnerHtml = `<div style="font-size:1.6rem; font-weight:bold; color:${winnerColor}; text-shadow:${winnerShadow};">${escapeHtml(winningLabel)}</div>`;
+                rouletteResult.innerHTML = `${effectBadge}<div style="font-size:0.8rem; color:#888;">${isRare ? '★ RARE ★' : 'RESULT'}</div>${winnerHtml}`;
+                rouletteResult.classList.toggle('rare', isRare);
+
+                finalize();
+            };
+
+            if (isRare) {
+                // ガチャ風の予兆 → 少し溜めてから結果
+                flashRareOverlay();
+                spinBtn.textContent = "！？";
+                setTimeout(reveal, 900);
+            } else {
+                reveal();
+            }
         }
 
         requestAnimationFrame(animate);
+        }); // ① runCountdown 完了コールバック終了
     });
 }
 
