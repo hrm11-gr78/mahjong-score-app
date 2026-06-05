@@ -5,6 +5,10 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>雀ログ</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Shippori+Mincho:wght@500;600;700&display=swap"
+        rel="stylesheet">
     <link rel="stylesheet" href="css/style.css">
     <link rel="manifest" href="manifest.json">
     <meta name="theme-color" content="#121212">
@@ -18,33 +22,36 @@
 <body>
     <div id="app">
         <div class="sticky-top">
-            <header style="display: flex; align-items: center; justify-content: space-between;">
-                <!-- 左グループ -->
-                <div style="display: flex; align-items: center; gap: 4px; flex: 1; justify-content: flex-start;">
-                    <button id="header-profile-btn" class="header-icon" style="display: none;"
-                        title="ユーザー設定">👤</button>
-                    <button id="header-league-btn" class="header-icon" style="display: none;" title="リーグ戦">🏆</button>
+            <header class="app-header">
+                <!-- 左：ユーザー設定 -->
+                <div class="app-header__side app-header__side--left">
+                    <button id="header-profile-btn" class="header-icon" style="display: none;" title="ユーザー設定"
+                        aria-label="ユーザー設定">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"
+                            stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                            <circle cx="12" cy="8" r="4" />
+                            <path d="M4 21c0-4 4-6.2 8-6.2s8 2.2 8 6.2" />
+                        </svg>
+                    </button>
                 </div>
-                <!-- 中央タイトル -->
-                <h1 id="app-title"
-                    style="cursor: pointer; display: flex; align-items: center; flex: 0 0 auto; margin: 0;">
-                    <img src="images/icon.png" alt="雀ログ" style="height: 48px; width: auto; object-fit: contain;">
+                <!-- 中央：ブランド（タップでホームへ戻る） -->
+                <h1 id="app-title" class="app-header__brand">
+                    <img src="images/icon.png" alt="" class="app-header__logo">
+                    <span class="app-header__wordmark">雀ログ</span>
                 </h1>
-                <!-- 右グループ -->
-                <div style="display: flex; align-items: center; gap: 4px; flex: 1; justify-content: flex-end;">
-                    <!-- [NEW] Gallery Button in Header -->
-                    <button id="header-gallery-btn" class="header-icon" style="display: none;">🖼️</button>
-                    <button id="header-settings-btn" class="header-icon" style="display: none;">⚙️</button>
+                <!-- 右：ルール設定 -->
+                <div class="app-header__side app-header__side--right">
+                    <button id="header-settings-btn" class="header-icon" style="display: none;" title="ルール設定"
+                        aria-label="ルール設定">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"
+                            stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                            <circle cx="12" cy="12" r="3.2" />
+                            <path
+                                d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V15z" />
+                        </svg>
+                    </button>
                 </div>
             </header>
-
-            <nav style="display: none;">
-                <button data-target="home" class="active">セット</button>
-                <button data-target="users">ユーザー</button>
-                <button data-target="roulette">ルーレット</button>
-                <!-- Gallery moved to header -->
-                <!-- League moved to header -->
-            </nav>
         </div>
 
         <!-- ローディング画面: Auth確認完了まで表示 -->
@@ -205,13 +212,20 @@
 
             <!-- HOME / SESSION SETUP SECTION -->
             <section id="home">
-                <h2>新規セット</h2>
                 <div id="setup-restriction-msg" class="restricted-access-msg"
                     style="display:none; padding:15px; background:rgba(255,165,0,0.1); border:1px solid orange; border-radius:8px; margin-bottom:20px; color:orange;">
                     ⚠️ セットを開始するには、画面左上のユーザーアイコン(👤)から自分の名前を選択してください。<br>
                     (未設定の状態では記録の参照のみ可能です)
                 </div>
 
+                <!-- 新規セット作成のトリガー（タップでフォーム展開） -->
+                <button type="button" id="new-set-toggle" class="new-set-cta">
+                    <span class="new-set-cta__plus">＋</span>
+                    <span class="new-set-cta__label">新規セット</span>
+                </button>
+
+                <!-- 作成フォーム（デフォルト折りたたみ） -->
+                <div id="new-set-panel" class="new-set-panel" style="display:none;">
                 <form id="session-setup-form">
                     <div class="form-group">
                         <label>日付</label>
@@ -299,18 +313,14 @@
                             </div>
                         </details>
                     </div>
-                    <button type="submit" id="session-setup-submit-btn" class="btn-primary">セット開始</button>
+                    <div style="display: flex; gap: 10px;">
+                        <button type="button" id="new-set-cancel" class="btn-secondary" style="flex: 0 0 auto;">閉じる</button>
+                        <button type="submit" id="session-setup-submit-btn" class="btn-primary" style="flex: 1;">セット開始</button>
+                    </div>
                 </form>
+                </div><!-- /#new-set-panel -->
 
-                <!-- 新規セットと過去セットの間の分かりやすい区切り -->
-                <div style="margin: 40px 0 30px; position: relative; text-align: center;">
-                    <hr
-                        style="border: none; border-top: 1px dashed rgba(255, 255, 255, 0.2); margin: 0; position: absolute; top: 50%; width: 100%; z-index: 1;">
-                    <span
-                        style="background-color: var(--bg-color); padding: 0 15px; color: rgba(255, 255, 255, 0.4); font-size: 0.75rem; font-weight: bold; letter-spacing: 3px; position: relative; z-index: 2;">HISTORY</span>
-                </div>
-
-                <h2 style="margin-top: 0;">過去のセット</h2>
+                <h2 class="home-history-title">過去のセット</h2>
                 <div id="session-list">
                     <!-- Session list injected here -->
                 </div>
@@ -1204,7 +1214,29 @@
             style="max-width: 95%; max-height: 90vh; border-radius: 4px; box-shadow: 0 4px 12px rgba(0,0,0,0.5);">
     </div>
 
-
+    <!-- ボトムナビゲーション（ログイン後に表示） -->
+    <nav class="bottom-nav" id="bottom-nav" style="display: none;">
+        <button type="button" class="bottom-nav__item active" data-target="home">
+            <span class="bottom-nav__icon">🀄</span>
+            <span class="bottom-nav__label">セット</span>
+        </button>
+        <button type="button" class="bottom-nav__item" data-target="users">
+            <span class="bottom-nav__icon">📊</span>
+            <span class="bottom-nav__label">成績</span>
+        </button>
+        <button type="button" class="bottom-nav__item" data-target="league-section">
+            <span class="bottom-nav__icon">🏆</span>
+            <span class="bottom-nav__label">リーグ</span>
+        </button>
+        <button type="button" class="bottom-nav__item" data-target="roulette">
+            <span class="bottom-nav__icon">🎯</span>
+            <span class="bottom-nav__label">ルーレット</span>
+        </button>
+        <button type="button" class="bottom-nav__item" data-target="gallery">
+            <span class="bottom-nav__icon">🖼️</span>
+            <span class="bottom-nav__label">ギャラリー</span>
+        </button>
+    </nav>
 
 
 
