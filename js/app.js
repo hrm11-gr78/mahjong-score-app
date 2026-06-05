@@ -151,7 +151,7 @@ async function handleAuthStateChanged(user, linkedUser) {
 
     // Show Nav and Profile Button
     if (nav) nav.style.display = 'flex';
-    if (profileBtn) profileBtn.style.display = 'block';
+    if (profileBtn) profileBtn.style.display = 'flex';
 
     localStorage.setItem('deviceUser', linkedUser.name); // Sync local storage for compat
 
@@ -356,6 +356,8 @@ function setupNavigation() {
         // Instead, just adding listener is fine as init() runs once.
         // If we want to be super safe against double-init, we can check a flag.
 
+        // data-target を持たないボタン（「その他」など）は専用ハンドラで処理するためスキップ
+        if (!btn.dataset.target) return;
         if (btn.dataset.listenerAttached) return;
 
         btn.addEventListener('click', (e) => {
@@ -365,6 +367,39 @@ function setupNavigation() {
         });
         btn.dataset.listenerAttached = 'true';
     });
+
+    // 1b. ヘッダーアイコン（ユーザー設定 / ルール設定）
+    const profileBtn = document.getElementById('header-profile-btn');
+    if (profileBtn && !profileBtn.dataset.listenerAttached) {
+        profileBtn.addEventListener('click', () => openProfileModal());
+        profileBtn.dataset.listenerAttached = 'true';
+    }
+    const settingsBtn = document.getElementById('header-settings-btn');
+    if (settingsBtn && !settingsBtn.dataset.listenerAttached) {
+        settingsBtn.addEventListener('click', () => navigateTo('settings'));
+        settingsBtn.dataset.listenerAttached = 'true';
+    }
+
+    // 1c. ホームの「新規セット」フォーム開閉
+    const newSetToggle = document.getElementById('new-set-toggle');
+    if (newSetToggle && !newSetToggle.dataset.listenerAttached) {
+        newSetToggle.addEventListener('click', () => {
+            const panel = document.getElementById('new-set-panel');
+            const isOpen = panel && panel.style.display !== 'none';
+            setNewSetPanel(!isOpen);
+            if (!isOpen) {
+                // 開いたらフォーム先頭が見えるようスクロール
+                document.getElementById('new-set-panel')
+                    ?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+            }
+        });
+        newSetToggle.dataset.listenerAttached = 'true';
+    }
+    const newSetCancel = document.getElementById('new-set-cancel');
+    if (newSetCancel && !newSetCancel.dataset.listenerAttached) {
+        newSetCancel.addEventListener('click', () => setNewSetPanel(false));
+        newSetCancel.dataset.listenerAttached = 'true';
+    }
 
     // 2. Specific Action Buttons
     if (backToHomeBtn) {
@@ -403,18 +438,36 @@ function setupNavigation() {
     }
 }
 
+// 詳細画面 → どのボトムナビタブを点灯させるかのマッピング
+// （設定はヘッダーアイコン経由なのでボトムタブの点灯対象外）
+const NAV_PARENT_MAP = {
+    'home': 'home',
+    'session-detail': 'home',
+    'input': 'home',
+    'users': 'users',
+    'user-detail': 'users',
+    'league-section': 'league-section',
+    'roulette': 'roulette',
+    'gallery': 'gallery'
+};
+
+// 認証・初期設定画面（ヘッダーアイコンを隠す）
+const AUTH_SCREENS = ['login', 'signup', 'link-user'];
+
+// ホームの「新規セット」フォームパネルの開閉
+function setNewSetPanel(open) {
+    const panel = document.getElementById('new-set-panel');
+    const toggle = document.getElementById('new-set-toggle');
+    if (!panel || !toggle) return;
+    panel.style.display = open ? 'block' : 'none';
+    toggle.classList.toggle('open', open);
+    const label = toggle.querySelector('.new-set-cta__label');
+    if (label) label.textContent = open ? '閉じる' : '新規セット';
+}
+
 function navigateTo(targetId) {
     if (!targetId) return;
     console.log(`Navigating to: ${targetId}. Found ${sections.length} sections.`);
-
-    // Update Buttons
-    navButtons.forEach(b => {
-        if (b.dataset.target === targetId) {
-            b.classList.add('active');
-        } else {
-            b.classList.remove('active');
-        }
-    });
 
     // Update Sections
     sections.forEach(s => {
@@ -425,49 +478,37 @@ function navigateTo(targetId) {
         if (s.id === targetId) {
             s.classList.add('active');
             s.style.display = 'block';
-            s.classList.add('active');
-            s.style.display = 'block';
             console.log("Navigated to:", targetId); // Debug log
-
-            // [NEW] Render Gallery
-            if (targetId === 'gallery' && window.renderGallery) {
-                window.renderGallery();
-            }
         }
     });
 
-    // Toggle Header Settings & League Button Visibility
+    // Render dynamic section content
+    if (targetId === 'gallery' && window.renderGallery) {
+        window.renderGallery();
+    }
+    if (targetId === 'league-section' && window.League) {
+        window.League.renderList(document.getElementById('league-section'));
+    }
+    // ホームは履歴ファースト：表示のたびに新規セットフォームは畳む
+    if (targetId === 'home') {
+        setNewSetPanel(false);
+    }
+
+    // ボトムナビのアクティブ表示（詳細画面は親タブを点灯）
+    const activeNav = NAV_PARENT_MAP[targetId] || null;
+    navButtons.forEach(b => {
+        const match = b.dataset.target && b.dataset.target === activeNav;
+        b.classList.toggle('active', !!match);
+    });
+    // ヘッダーアイコン（ユーザー設定 / ルール設定）は認証画面以外で表示
+    const isAuthScreen = AUTH_SCREENS.includes(targetId);
+    const profileBtn = document.getElementById('header-profile-btn');
     const settingsBtn = document.getElementById('header-settings-btn');
-    const leagueBtn = document.getElementById('header-league-btn');
-    const galleryBtn = document.getElementById('header-gallery-btn');
+    if (profileBtn) profileBtn.style.display = isAuthScreen ? 'none' : 'flex';
+    if (settingsBtn) settingsBtn.style.display = isAuthScreen ? 'none' : 'flex';
 
-    // Show on main tabs (Home, Users, Roulette)
-    // Note: League section itself is a "main" view but handled via header now.
-    const mainTabs = ['home', 'users', 'roulette', 'league-section', 'session-detail', 'input', 'user-detail', 'settings', 'gallery'];
-
-    if (settingsBtn) {
-        if (mainTabs.includes(targetId)) {
-            settingsBtn.style.display = 'block';
-        } else {
-            settingsBtn.style.display = 'none';
-        }
-    }
-
-    if (leagueBtn) {
-        if (mainTabs.includes(targetId)) {
-            leagueBtn.style.display = 'block';
-        } else {
-            leagueBtn.style.display = 'none';
-        }
-    }
-
-    if (galleryBtn) {
-        if (mainTabs.includes(targetId)) {
-            galleryBtn.style.display = 'block';
-        } else {
-            galleryBtn.style.display = 'none';
-        }
-    }
+    // スコア入力中はミスタップ防止でボトムナビを隠す
+    document.body.classList.toggle('hide-bottom-nav', targetId === 'input');
 
     // Hide the global app header on the standalone auth screens so the
     // card's own branding badge isn't duplicated by the header logo.
@@ -503,10 +544,14 @@ function updateActionRestrictions() {
 
     // Messages to toggle
     const restrictionMsgs = document.querySelectorAll('.restricted-access-msg');
+    // ホームの新規セット作成 CTA
+    const newSetToggle = document.getElementById('new-set-toggle');
 
     if (isRestricted) {
         // Hide/Disable active elements
         if (sessionSetupForm) sessionSetupForm.style.display = 'none';
+        if (newSetToggle) newSetToggle.style.display = 'none';
+        setNewSetPanel(false);
         if (newGameBtn) newGameBtn.style.display = 'none';
         if (spinBtn) spinBtn.disabled = true;
         if (addRouletteItemBtn) addRouletteItemBtn.disabled = true;
@@ -520,6 +565,7 @@ function updateActionRestrictions() {
     } else {
         // Show/Enable active elements
         if (sessionSetupForm) sessionSetupForm.style.display = 'block';
+        if (newSetToggle) newSetToggle.style.display = 'flex';
         if (newGameBtn) newGameBtn.style.display = 'block';
         if (spinBtn) spinBtn.disabled = false;
         if (addRouletteItemBtn) addRouletteItemBtn.disabled = false;
@@ -534,56 +580,47 @@ function updateActionRestrictions() {
 }
 
 // --- DOM Elements ---
-const headerSettingsBtn = document.getElementById('header-settings-btn');
-if (headerSettingsBtn) {
-    headerSettingsBtn.addEventListener('click', () => {
-        navigateTo('settings');
-    });
-}
-
-const headerProfileBtn = document.getElementById('header-profile-btn');
 const userProfileModal = document.getElementById('user-profile-modal');
 const profileUserSelect = document.getElementById('profile-user-select');
 const closeProfileModalBtn = document.getElementById('close-profile-modal');
 const signOutBtn = document.getElementById('sign-out-btn');
 
-if (headerProfileBtn) {
-    headerProfileBtn.addEventListener('click', async () => {
-        // Load current info
-        const deviceUser = localStorage.getItem('deviceUser') || '未設定';
-        const currentUser = window.AppStorage.auth.currentUser;
-        const email = currentUser ? currentUser.email : '未ログイン';
+// プロフィールモーダルを開く（「その他」シートのユーザー設定から呼び出す）
+async function openProfileModal() {
+    // Load current info
+    const deviceUser = localStorage.getItem('deviceUser') || '未設定';
+    const currentUser = window.AppStorage.auth.currentUser;
+    const email = currentUser ? currentUser.email : '未ログイン';
 
-        // Update Modal Content
-        const nameEl = document.getElementById('profile-game-name');
-        const emailEl = document.getElementById('profile-email');
+    // Update Modal Content
+    const nameEl = document.getElementById('profile-game-name');
+    const emailEl = document.getElementById('profile-email');
 
-        if (nameEl) nameEl.textContent = deviceUser;
-        if (emailEl) emailEl.textContent = email;
+    if (nameEl) nameEl.textContent = deviceUser;
+    if (emailEl) emailEl.textContent = email;
 
-        // Account metadata (creation / last sign-in)
-        const createdEl = document.getElementById('profile-created');
-        const lastLoginEl = document.getElementById('profile-last-login');
-        const meta = currentUser && currentUser.metadata;
-        if (createdEl) createdEl.textContent = formatProfileDate(meta && meta.creationTime);
-        if (lastLoginEl) lastLoginEl.textContent = formatProfileDate(meta && meta.lastSignInTime);
+    // Account metadata (creation / last sign-in)
+    const createdEl = document.getElementById('profile-created');
+    const lastLoginEl = document.getElementById('profile-last-login');
+    const meta = currentUser && currentUser.metadata;
+    if (createdEl) createdEl.textContent = formatProfileDate(meta && meta.creationTime);
+    if (lastLoginEl) lastLoginEl.textContent = formatProfileDate(meta && meta.lastSignInTime);
 
-        // Show modal
-        if (userProfileModal) {
-            userProfileModal.style.display = 'flex';
+    // Show modal
+    if (userProfileModal) {
+        userProfileModal.style.display = 'flex';
+    }
+
+    // Load avatar (async; show placeholder until ready)
+    setProfileAvatarImage(null);
+    if (deviceUser && deviceUser !== '未設定') {
+        try {
+            const avatar = await window.AppStorage.getUserAvatar(deviceUser);
+            setProfileAvatarImage(avatar);
+        } catch (e) {
+            console.error('Failed to load avatar:', e);
         }
-
-        // Load avatar (async; show placeholder until ready)
-        setProfileAvatarImage(null);
-        if (deviceUser && deviceUser !== '未設定') {
-            try {
-                const avatar = await window.AppStorage.getUserAvatar(deviceUser);
-                setProfileAvatarImage(avatar);
-            } catch (e) {
-                console.error('Failed to load avatar:', e);
-            }
-        }
-    });
+    }
 }
 
 // --- Profile Avatar Upload ---
@@ -1158,25 +1195,8 @@ async function renderUserOptions() {
     }
 }
 
-
-// Header League Button Listener
-const headerLeagueBtn = document.getElementById('header-league-btn');
-if (headerLeagueBtn) {
-    headerLeagueBtn.addEventListener('click', () => {
-        navigateTo('league-section');
-        if (window.League) {
-            window.League.renderList(document.getElementById('league-section'));
-        }
-    });
-}
-
-// Header Gallery Button Listener
-const headerGalleryBtn = document.getElementById('header-gallery-btn');
-if (headerGalleryBtn) {
-    headerGalleryBtn.addEventListener('click', () => {
-        navigateTo('gallery');
-    });
-}
+// リーグ戦・役満ギャラリーへの遷移はボトムナビ／「その他」シート経由。
+// 描画は navigateTo() 内で行う（league-section→League.renderList, gallery→renderGallery）。
 
 function setupSessionFormToggles() {
     document.querySelectorAll('.toggle-guest-btn').forEach(btn => {
