@@ -388,7 +388,8 @@ function setupNavigation() {
             const isOpen = panel && panel.style.display !== 'none';
             setNewSetPanel(!isOpen);
             if (!isOpen) {
-                // 開いたらフォーム先頭が見えるようスクロール
+                // 開いたら初期化（自分セット・ルール読込・状態反映）＋スクロール
+                onNewSetPanelOpen();
                 document.getElementById('new-set-panel')
                     ?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
             }
@@ -1236,6 +1237,227 @@ function setupSessionFormToggles() {
         btn.dataset.listenerAttached = 'true';
     });
 }
+
+// =========================================================================
+// 新規セット：座席カードのロジック
+// =========================================================================
+const SEAT_IDS = ['p1', 'p2', 'p3', 'p4'];
+const avatarCache = {}; // name -> base64 | null
+const RULES_LS_KEY = 'lastSetRules';
+
+// 指定座席の現在値（select選択 or ゲスト入力）
+function getSeatName(pid) {
+    const wrapper = document.getElementById(`${pid}-wrapper`);
+    if (!wrapper) return '';
+    const select = wrapper.querySelector('select');
+    const input = wrapper.querySelector('input');
+    if (select && select.style.display !== 'none') return select.value || '';
+    return input ? (input.value || '').trim() : '';
+}
+
+// 座席のモード切替（ゲスト入力 / リスト選択）
+function setSeatGuestMode(pid, guest) {
+    const wrapper = document.getElementById(`${pid}-wrapper`);
+    if (!wrapper) return;
+    const select = wrapper.querySelector('select');
+    const input = wrapper.querySelector('input');
+    const btn = wrapper.querySelector('.toggle-guest-btn');
+    if (guest) {
+        select.style.display = 'none';
+        select.removeAttribute('required');
+        input.style.display = 'block';
+        input.setAttribute('required', '');
+        if (btn) { btn.textContent = '📋'; btn.title = 'リストから選択'; }
+    } else {
+        select.style.display = 'block';
+        select.setAttribute('required', '');
+        input.style.display = 'none';
+        input.removeAttribute('required');
+        if (btn) { btn.textContent = '🖊️'; btn.title = '手動入力切替'; }
+    }
+}
+
+// 座席にプレイヤーをセット（リストにあればselect、なければゲスト入力に）
+function setSeatName(pid, name) {
+    const wrapper = document.getElementById(`${pid}-wrapper`);
+    if (!wrapper) return;
+    const select = wrapper.querySelector('select');
+    const input = wrapper.querySelector('input');
+    if (!name) {
+        setSeatGuestMode(pid, false);
+        select.value = '';
+        input.value = '';
+        return;
+    }
+    const hasOption = Array.from(select.options).some(o => o.value === name);
+    if (hasOption) {
+        setSeatGuestMode(pid, false);
+        select.value = name;
+        input.value = '';
+    } else {
+        setSeatGuestMode(pid, true);
+        input.value = name;
+    }
+}
+
+// アバター表示を更新（画像 → イニシャル → ＋ の順でフォールバック）
+async function updateSeatAvatar(pid) {
+    const el = document.getElementById(`${pid}-avatar`);
+    if (!el) return;
+    const name = getSeatName(pid);
+    if (!name) {
+        el.innerHTML = '＋';
+        return;
+    }
+    el.textContent = name.charAt(0); // イニシャルを即時表示
+    if (avatarCache[name] === undefined && window.AppStorage && window.AppStorage.getUserAvatar) {
+        try {
+            avatarCache[name] = await window.AppStorage.getUserAvatar(name);
+        } catch (e) {
+            avatarCache[name] = null;
+        }
+    }
+    // 取得後も同じ名前が表示されていれば画像を反映
+    if (getSeatName(pid) === name && avatarCache[name]) {
+        el.innerHTML = `<img src="${avatarCache[name]}" alt="">`;
+    }
+}
+
+// 重複防止・空席ハイライト・開始ボタン活性・アバター更新をまとめて反映
+function refreshSeatState() {
+    const names = SEAT_IDS.map(getSeatName);
+    const chosen = names.filter(Boolean);
+
+    SEAT_IDS.forEach((pid, idx) => {
+        const wrapper = document.getElementById(`${pid}-wrapper`);
+        if (!wrapper) return;
+        const select = wrapper.querySelector('select');
+        const own = names[idx];
+        // 他席で選択済みの名前を無効化（重複防止）
+        Array.from(select.options).forEach(opt => {
+            if (!opt.value) return;
+            opt.disabled = opt.value !== own && chosen.includes(opt.value);
+        });
+        wrapper.classList.toggle('is-empty', !own);
+        updateSeatAvatar(pid);
+    });
+
+    // 4人が揃い、重複が無いときだけ開始ボタンを活性化
+    const isValid = chosen.length === 4 && new Set(chosen).size === 4;
+    const submitBtn = document.getElementById('session-setup-submit-btn');
+    if (submitBtn) submitBtn.disabled = !isValid;
+}
+
+// P1（起家）にデバイスユーザーを自動セット（空席のときのみ）
+function prefillSelfSeat() {
+    const deviceUser = localStorage.getItem('deviceUser');
+    if (!deviceUser) return;
+    if (getSeatName('p1')) return;
+    const select = document.querySelector('#p1-wrapper select');
+    if (select && Array.from(select.options).some(o => o.value === deviceUser)) {
+        setSeatName('p1', deviceUser);
+    }
+}
+
+// 「前回のメンバー」：自分が参加した最新セットの4人を呼び出す
+async function fillPrevMembers() {
+    const deviceUser = localStorage.getItem('deviceUser');
+    let sessions = [];
+    try {
+        sessions = await window.AppStorage.getSessions();
+    } catch (e) {
+        sessions = [];
+    }
+    let target = sessions.find(s => Array.isArray(s.players) && s.players.includes(deviceUser));
+    if (!target) target = sessions[0];
+    if (!target || !Array.isArray(target.players) || target.players.length === 0) {
+        if (typeof showToast === 'function') showToast('呼び出せる前回のメンバーがありません。');
+        return;
+    }
+    const players = target.players.slice(0, 4);
+    SEAT_IDS.forEach((pid, i) => setSeatName(pid, players[i] || ''));
+    refreshSeatState();
+    if (typeof showToast === 'function') showToast('前回のメンバーを呼び出しました。');
+}
+
+// 「席替え」：現在の着席をシャッフル
+function shuffleSeats() {
+    const names = SEAT_IDS.map(getSeatName);
+    if (names.filter(Boolean).length < 2) return;
+    for (let i = names.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [names[i], names[j]] = [names[j], names[i]];
+    }
+    SEAT_IDS.forEach((pid, i) => setSeatName(pid, names[i]));
+    refreshSeatState();
+}
+
+// オカ表示の更新（返し点と配給原点から算出）
+function updateOkaDisplay() {
+    const okaEl = document.getElementById('new-set-oka');
+    if (!okaEl) return;
+    const start = Number(document.getElementById('new-set-start')?.value) || 0;
+    const ret = Number(document.getElementById('new-set-return')?.value) || 0;
+    const oka = ((ret - start) * 4) / 1000; // 1000点 = 1.0pt
+    okaEl.textContent = `${oka > 0 ? '+' : ''}${oka.toFixed(1)}`;
+    okaEl.style.color = oka >= 0 ? 'var(--secondary-color)' : 'var(--error-color)';
+}
+
+// 前回使用したルールを既定値として読み込む
+function loadRememberedRules() {
+    try {
+        const raw = localStorage.getItem(RULES_LS_KEY);
+        if (raw) {
+            const r = JSON.parse(raw);
+            const set = (id, v) => { const el = document.getElementById(id); if (el && v != null) el.value = v; };
+            set('new-set-start', r.startScore);
+            set('new-set-return', r.returnScore);
+            if (Array.isArray(r.uma)) {
+                set('new-set-uma1', r.uma[0]); set('new-set-uma2', r.uma[1]);
+                set('new-set-uma3', r.uma[2]); set('new-set-uma4', r.uma[3]);
+            }
+            if (r.tieBreaker) {
+                const radio = document.querySelector(`input[name="newSetTieBreaker"][value="${r.tieBreaker}"]`);
+                if (radio) radio.checked = true;
+            }
+        }
+    } catch (e) { /* ignore */ }
+    updateOkaDisplay();
+}
+
+// ルールを記憶（セット作成時に呼ぶ）
+function rememberRules(rules) {
+    try { localStorage.setItem(RULES_LS_KEY, JSON.stringify(rules)); } catch (e) { /* ignore */ }
+}
+
+// 新規セットフォームのイベント配線（起動時に一度だけ）
+function setupNewSetForm() {
+    SEAT_IDS.forEach(pid => {
+        const wrapper = document.getElementById(`${pid}-wrapper`);
+        if (!wrapper) return;
+        const select = wrapper.querySelector('select');
+        const input = wrapper.querySelector('input');
+        if (select) select.addEventListener('change', refreshSeatState);
+        if (input) input.addEventListener('input', refreshSeatState);
+    });
+    // ゲスト切替後も状態を再計算
+    document.querySelectorAll('.toggle-guest-btn').forEach(btn => {
+        btn.addEventListener('click', () => setTimeout(refreshSeatState, 0));
+    });
+    document.getElementById('seat-prev-members')?.addEventListener('click', fillPrevMembers);
+    document.getElementById('seat-shuffle')?.addEventListener('click', shuffleSeats);
+    ['new-set-start', 'new-set-return'].forEach(id => {
+        document.getElementById(id)?.addEventListener('input', updateOkaDisplay);
+    });
+}
+
+// パネルを開いたときの初期化（自分セット・ルール読込・状態反映）
+function onNewSetPanelOpen() {
+    loadRememberedRules();
+    prefillSelfSeat();
+    refreshSeatState();
+}
+
 // -------------------------------------------------------------------------
 // TITLE SYSTEM
 // -------------------------------------------------------------------------
@@ -3087,6 +3309,9 @@ if (sessionSetupForm) {
             tieBreaker: document.querySelector('input[name="newSetTieBreaker"]:checked').value
         };
 
+        // 次回のためにルールを記憶
+        rememberRules(rules);
+
         // バリデーション通過後にローディング開始
         const submitBtn = document.getElementById('session-setup-submit-btn');
         setButtonLoading(submitBtn, true, 'セット作成中...');
@@ -3147,93 +3372,230 @@ if (sessionSetupForm) {
     });
 }
 
+// セット一覧の対戦相手フィルタ状態（再描画をまたいで保持）
+let sessionListMemberFilter = 'all';
+
+// 指定ユーザーのそのセットでの成績を集計（参加していなければ null）
+function getSelfSessionResult(session, selfName) {
+    if (!selfName || !Array.isArray(session.players) || !session.players.includes(selfName)) return null;
+    let total = 0, rankSum = 0, games = 0, tops = 0;
+    (session.games || []).forEach(g => {
+        const p = (g.players || []).find(x => x.name === selfName);
+        if (p) {
+            total += (p.finalScore || 0);
+            rankSum += (p.rank || 0);
+            games++;
+            if (p.rank === 1) tops++;
+        }
+    });
+    return {
+        total: parseFloat(total.toFixed(1)),
+        avgRank: games > 0 ? rankSum / games : 0,
+        games,
+        tops
+    };
+}
+
+// セットの日付表示用の整形（曜日・月キー・相対表記）
+function formatSessionDate(dateStr) {
+    const d = new Date(dateStr);
+    if (isNaN(d.getTime())) {
+        return { day: dateStr || '不明', dow: '', monthKey: 'その他', relative: '' };
+    }
+    const dows = ['日', '月', '火', '水', '木', '金', '土'];
+    const day = `${d.getMonth() + 1}/${d.getDate()}`;
+    const dow = dows[d.getDay()];
+    const monthKey = `${d.getFullYear()}年${d.getMonth() + 1}月`;
+
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const target = new Date(d);
+    target.setHours(0, 0, 0, 0);
+    const diffDays = Math.round((today - target) / 86400000);
+    let relative = '';
+    if (diffDays === 0) relative = '今日';
+    else if (diffDays === 1) relative = '昨日';
+    else if (diffDays > 1 && diffDays < 7) relative = `${diffDays}日前`;
+
+    return { day, dow, monthKey, relative };
+}
+
 async function renderSessionList() {
     if (!sessionList) return;
     const sessions = await window.AppStorage.getSessions();
-
-    // Filter by Device User
     const deviceUser = localStorage.getItem('deviceUser');
-    let filteredSessions = sessions;
+    const isAdmin = deviceUser === 'ヒロム';
 
-    // Filtering logic:
-    if (deviceUser === 'ヒロム') {
-        // Admin sees everything
+    // --- 参加者によるフィルタ（既存仕様を踏襲） ---
+    let filteredSessions;
+    if (isAdmin) {
         filteredSessions = sessions;
     } else if (deviceUser) {
-        // Normal user sees only their games
         filteredSessions = sessions.filter(s => Array.isArray(s.players) && s.players.includes(deviceUser));
     } else {
-        // No user selected: show nothing
         filteredSessions = [];
     }
 
     sessionList.innerHTML = '';
+
     if (filteredSessions.length === 0) {
         let msg = 'セット履歴がありません。';
         if (!deviceUser) {
             msg = 'セット履歴を表示するには、ユーザー設定が必要です。';
-        } else if (deviceUser !== 'ヒロム') {
-            msg = '参加したセット履歴がありません。';
+        } else if (!isAdmin) {
+            msg = '参加したセット履歴がありません。「＋新規セット」から記録を始めましょう。';
         }
-        sessionList.innerHTML = `<p class="text-center" style="color: var(--text-secondary)">${msg}</p>`;
+        sessionList.innerHTML = `<div class="session-empty"><p>${msg}</p></div>`;
         return;
     }
 
-    filteredSessions.forEach(session => {
+    const selfName = deviceUser;
+
+    // --- サマリーヘッダー（対戦相手フィルタに関わらず全体の自分成績） ---
+    if (selfName) {
+        let totalScore = 0, totalGames = 0, totalTops = 0, setCount = 0;
+        filteredSessions.forEach(s => {
+            const r = getSelfSessionResult(s, selfName);
+            if (r && r.games > 0) {
+                totalScore += r.total;
+                totalGames += r.games;
+                totalTops += r.tops;
+                setCount++;
+            }
+        });
+        if (totalGames > 0) {
+            totalScore = parseFloat(totalScore.toFixed(1));
+            const scoreClass = totalScore >= 0 ? 'score-positive' : 'score-negative';
+            const scoreStr = (totalScore > 0 ? '+' : '') + totalScore.toFixed(1);
+            const topRate = ((totalTops / totalGames) * 100).toFixed(1);
+            const summary = document.createElement('div');
+            summary.className = 'session-summary';
+            summary.innerHTML = `
+                <div class="session-summary__item">
+                    <span class="session-summary__label">通算収支</span>
+                    <span class="session-summary__value ${scoreClass}">${scoreStr}</span>
+                </div>
+                <div class="session-summary__item">
+                    <span class="session-summary__label">セット</span>
+                    <span class="session-summary__value">${setCount}</span>
+                </div>
+                <div class="session-summary__item">
+                    <span class="session-summary__label">対局</span>
+                    <span class="session-summary__value">${totalGames}</span>
+                </div>
+                <div class="session-summary__item">
+                    <span class="session-summary__label">トップ率</span>
+                    <span class="session-summary__value">${topRate}%</span>
+                </div>
+            `;
+            sessionList.appendChild(summary);
+        }
+    }
+
+    // --- 対戦相手フィルタの選択肢を構築 ---
+    const coMembers = new Set();
+    filteredSessions.forEach(s => (s.players || []).forEach(p => {
+        if (p !== selfName) coMembers.add(p);
+    }));
+    if (sessionListMemberFilter !== 'all' && !coMembers.has(sessionListMemberFilter)) {
+        sessionListMemberFilter = 'all';
+    }
+
+    if (coMembers.size > 0) {
+        const memberOptions = ['all', ...Array.from(coMembers).sort((a, b) => a.localeCompare(b, 'ja'))];
+        const filterBar = document.createElement('div');
+        filterBar.className = 'session-filter';
+        const opts = memberOptions.map(m =>
+            `<option value="${m}"${m === sessionListMemberFilter ? ' selected' : ''}>${m === 'all' ? '全メンバー' : m}</option>`
+        ).join('');
+        filterBar.innerHTML = `
+            <label class="session-filter__label" for="session-member-filter">対戦相手</label>
+            <select class="session-filter__select" id="session-member-filter">${opts}</select>
+        `;
+        sessionList.appendChild(filterBar);
+        filterBar.querySelector('#session-member-filter').addEventListener('change', (e) => {
+            sessionListMemberFilter = e.target.value;
+            renderSessionList();
+        });
+    }
+
+    // --- 対戦相手フィルタを適用 ---
+    let viewSessions = filteredSessions;
+    if (sessionListMemberFilter !== 'all') {
+        viewSessions = filteredSessions.filter(s => (s.players || []).includes(sessionListMemberFilter));
+    }
+
+    if (viewSessions.length === 0) {
+        const none = document.createElement('div');
+        none.className = 'session-empty';
+        none.innerHTML = `<p>「${sessionListMemberFilter}」さんとのセットはありません。</p>`;
+        sessionList.appendChild(none);
+        return;
+    }
+
+    // --- 月別グルーピングしてカード描画 ---
+    let lastMonthKey = null;
+
+    viewSessions.forEach(session => {
+        const dateInfo = formatSessionDate(session.date);
+        if (dateInfo.monthKey !== lastMonthKey) {
+            lastMonthKey = dateInfo.monthKey;
+            const groupHeader = document.createElement('div');
+            groupHeader.className = 'session-group-header';
+            groupHeader.textContent = dateInfo.monthKey;
+            sessionList.appendChild(groupHeader);
+        }
+
         const div = document.createElement('div');
-        div.className = 'history-card';
-        div.style.cursor = 'pointer';
+        div.className = 'session-card';
 
-        // Lock Status
         const isLocked = session.locked === true;
-        const lockIcon = isLocked ? '🔒' : '🔓';
-
-        // Show delete button if admin OR participant, AND NOT LOCKED
         const isParticipant = Array.isArray(session.players) && session.players.includes(deviceUser);
-        const showDelete = (deviceUser === 'ヒロム' || isParticipant) && !isLocked;
+        const showDelete = (isAdmin || isParticipant) && !isLocked;
+
+        // 自分のこのセットでの成績
+        const self = getSelfSessionResult(session, selfName);
+        let resultHtml;
+        if (self && self.games > 0) {
+            const scoreClass = self.total >= 0 ? 'score-positive' : 'score-negative';
+            const scoreStr = (self.total > 0 ? '+' : '') + self.total.toFixed(1);
+            const medal = self.tops > 0 ? ` 🥇${self.tops > 1 ? '×' + self.tops : ''}` : '';
+            resultHtml = `
+                <div class="session-card__result">
+                    <span class="session-card__score ${scoreClass}">${scoreStr}</span>
+                    <span class="session-card__sub">平均${self.avgRank.toFixed(2)}着${medal}</span>
+                </div>`;
+        } else {
+            resultHtml = `<div class="session-card__result"><span class="session-card__sub">観戦</span></div>`;
+        }
 
         div.innerHTML = `
-            <div style="display:flex; justify-content:space-between; align-items:center;">
-                <strong>${session.date}</strong>
-                <div style="display:flex; align-items:center; gap:10px;">
-                    <span style="font-size:0.9rem;">${session.games.length} 対局</span>
-                    ${localStorage.getItem('deviceUser') === 'ヒロム'
-                ? `<span class="session-lock-btn" data-id="${session.id}" style="cursor:pointer; font-size:1.2rem;">${lockIcon}</span>`
-                : ''}
-                    ${showDelete
-                ? `<button class="btn-danger btn-sm delete-session-btn" data-id="${session.id}" style="padding: 2px 8px; font-size: 0.8rem;">削除</button>`
-                : ''}
+            <div class="session-card__left">
+                <div class="session-card__date">
+                    <span class="session-card__day">${dateInfo.day}<span class="session-card__dow">(${dateInfo.dow})</span></span>
+                    ${dateInfo.relative ? `<span class="session-card__relative">${dateInfo.relative}</span>` : ''}
+                </div>
+                <div class="session-card__info">
+                    <span class="session-card__games">${(session.games || []).length}対局</span>
+                    <span class="session-card__players">${(session.players || []).map(n => `<span class="player-chip${n === selfName ? ' is-self' : ''}">${n}</span>`).join('')}</span>
                 </div>
             </div>
-            <div style="font-size:0.9rem; color:var(--text-secondary); margin-top:4px;">
-                ${(session.players || []).join(', ')}
+            ${resultHtml}
+            <div class="session-card__actions">
+                ${showDelete ? `<button class="session-icon-btn session-delete-btn" data-id="${session.id}" title="削除">🗑</button>` : ''}
             </div>
         `;
 
-        // Card click for navigation
         div.addEventListener('click', (e) => {
-            // Prevent navigation if delete button or lock button were clicked
-            if (!e.target.closest('.delete-session-btn') && !e.target.closest('.session-lock-btn')) {
+            if (!e.target.closest('.session-delete-btn')) {
                 openSession(session.id);
             }
         });
 
-        // Lock button click
-        const lockBtn = div.querySelector('.session-lock-btn');
-        if (lockBtn) {
-            lockBtn.addEventListener('click', async (e) => {
-                e.stopPropagation();
-                // Toggle lock
-                await window.AppStorage.updateSession(session.id, { locked: !isLocked });
-                await renderSessionList();
-            });
-        }
-
-        // Delete button click
-        const deleteSessionBtn = div.querySelector('.delete-session-btn');
+        const deleteSessionBtn = div.querySelector('.session-delete-btn');
         if (deleteSessionBtn) {
             deleteSessionBtn.addEventListener('click', async (e) => {
-                e.stopPropagation(); // Prevent card click
+                e.stopPropagation();
                 if (confirm('このセットを削除しますか？\nこの操作は取り消せません。')) {
                     const success = await window.AppStorage.removeSession(session.id);
                     if (success !== false) {
@@ -3279,6 +3641,7 @@ async function openSession(sessionId) {
         if (controlsDiv) controlsDiv.innerHTML = '';
     }
 
+    renderSelfBanner(session);
     await renderSessionTotal(session);
     renderScoreChart(session);
     renderGameList(session);
@@ -3315,19 +3678,61 @@ async function openSession(sessionId) {
         } else if (session.locked) {
             newGameBtn.style.display = '';
             newGameBtn.disabled = true;
-            newGameBtn.innerHTML = "🔒 セットはロックされています";
-            newGameBtn.style.backgroundColor = "#475569";
-            newGameBtn.style.cursor = "not-allowed";
-            newGameBtn.style.opacity = "0.7";
+            newGameBtn.className = 'btn-locked-notice';
+            newGameBtn.innerHTML = '<span class="btn-locked-notice__icon">🔒</span><span class="btn-locked-notice__text">このセットはロックされています<small>「セットを再開」で編集できます</small></span>';
+            newGameBtn.style.backgroundColor = "";
+            newGameBtn.style.cursor = "";
+            newGameBtn.style.opacity = "";
         } else {
             newGameBtn.style.display = '';
             newGameBtn.disabled = false;
+            newGameBtn.className = 'btn-primary';
             newGameBtn.innerHTML = "+ 対局を追加";
             newGameBtn.style.backgroundColor = "";
             newGameBtn.style.cursor = "";
             newGameBtn.style.opacity = "";
         }
     }
+}
+
+// セット詳細：自分のこの卓での成績バナー
+function renderSelfBanner(session) {
+    const banner = document.getElementById('session-self-banner');
+    if (!banner) return;
+    const selfName = localStorage.getItem('deviceUser');
+    const r = getSelfSessionResult(session, selfName);
+    if (!r || r.games === 0) {
+        banner.innerHTML = '';
+        banner.style.display = 'none';
+        return;
+    }
+    banner.style.display = '';
+
+    const scoreClass = r.total >= 0 ? 'score-positive' : 'score-negative';
+    const scoreStr = (r.total > 0 ? '+' : '') + r.total.toFixed(1);
+
+    // 着順推移（古い順）
+    const ranks = [];
+    (session.games || []).forEach(g => {
+        const p = (g.players || []).find(x => x.name === selfName);
+        if (p) ranks.push(p.rank);
+    });
+    const rankChips = ranks.map(rk => `<span class="rank-dot rank-${rk}">${rk}</span>`).join('');
+    const medal = r.tops > 0 ? `🥇×${r.tops}` : '—';
+
+    banner.innerHTML = `
+        <div class="self-banner">
+            <div class="self-banner__head">
+                <span class="self-banner__name">${selfName}</span>
+                <span class="self-banner__score ${scoreClass}">${scoreStr}</span>
+            </div>
+            <div class="self-banner__stats">
+                <span><b>平均</b> ${r.avgRank.toFixed(2)}着</span>
+                <span><b>トップ</b> ${medal}</span>
+                <span class="self-banner__ranks"><b>着順</b> ${rankChips}</span>
+            </div>
+        </div>
+    `;
 }
 
 function renderSessionControls(session) {
@@ -3351,14 +3756,15 @@ function renderSessionControls(session) {
         }
     }
 
+    controlsDiv.className = 'session-actions';
+    controlsDiv.removeAttribute('style');
     controlsDiv.innerHTML = '';
     const btn = document.createElement('button');
     const isLocked = !!session.locked;
 
     if (isLocked) {
-        btn.textContent = 'セット再開 (ロック解除)';
-        btn.className = 'btn-secondary'; // or distinct style
-        btn.style.cssText = 'width: 100%; padding: 12px; font-weight: bold; background: #475569; color: #cbd5e1;';
+        btn.innerHTML = '<span class="session-action-btn__icon">🔓</span>セットを再開';
+        btn.className = 'session-action-btn session-action-btn--resume';
         btn.onclick = async () => {
             if (confirm('セットを再開しますか？\n修正が可能になります。')) {
                 await window.AppStorage.updateSession(session.id, { locked: false });
@@ -3366,9 +3772,8 @@ function renderSessionControls(session) {
             }
         };
     } else {
-        btn.textContent = 'セット終了 (ロックする)';
-        btn.className = 'btn-primary';
-        btn.style.cssText = 'width: 100%; padding: 12px; font-weight: bold; margin-bottom: 10px;'; // Add margin for spacing
+        btn.innerHTML = '<span class="session-action-btn__icon">🔒</span>セットを終了';
+        btn.className = 'session-action-btn session-action-btn--end';
         btn.onclick = async () => {
             if (confirm('セットを終了してロックしますか？\n(後から解除も可能です)')) {
                 await window.AppStorage.updateSession(session.id, { locked: true });
@@ -3380,9 +3785,8 @@ function renderSessionControls(session) {
 
     // Share Button
     const shareBtn = document.createElement('button');
-    shareBtn.innerHTML = '📷 画像共有';
-    shareBtn.className = 'btn-secondary';
-    shareBtn.style.cssText = 'width: 100%; padding: 12px; font-weight: bold; background: linear-gradient(135deg, #6366f1, #8b5cf6); color: white; border: none; margin-top: 10px;';
+    shareBtn.innerHTML = '<span class="session-action-btn__icon">📷</span>画像で共有';
+    shareBtn.className = 'session-action-btn session-action-btn--share';
     shareBtn.onclick = () => {
         if (window.Share) {
             window.Share.generateSessionImage(session);
@@ -3424,6 +3828,7 @@ async function renderSessionTotal(session) {
     // Sort by total score
     const sortedPlayers = session.players.slice().sort((a, b) => totals[b] - totals[a]);
     const rate = session.rate || 0;
+    const selfName = localStorage.getItem('deviceUser');
 
     // Build Table Header
     let html = `<thead><tr>
@@ -3463,9 +3868,14 @@ async function renderSessionTotal(session) {
             ? `<span style="cursor:pointer; text-decoration:underline;" onclick="openUserDetail('${p}')">${p}</span>`
             : `<span>${p}</span>`;
 
+        const isSelf = p === selfName;
+        const medals = ['🥇', '🥈', '🥉'];
+        const rankLabel = i < 3 ? medals[i] : (i + 1);
+        const rowClass = `${isSelf ? 'self-row' : ''}${i === 0 ? ' top-row' : ''}`.trim();
+
         html += `
-            <tr>
-                <td>${i + 1}</td>
+            <tr class="${rowClass}">
+                <td>${rankLabel}</td>
                 <td>${nameHtml}</td>
                 <td class="${scoreClass}" style="font-weight:bold;">${scoreStr}</td>
                 ${amountHtml}
@@ -3493,8 +3903,9 @@ function renderScoreChart(session) {
     }
 
     // Prepare Data
-    const labels = ['Start'];
-    session.games.forEach((_, i) => labels.push(`Game ${i + 1}`));
+    const selfName = localStorage.getItem('deviceUser');
+    const labels = ['開始'];
+    session.games.forEach((_, i) => labels.push(`${i + 1}局`));
 
     const datasets = session.players.map((player, index) => {
         const data = [0]; // Start at 0
@@ -3516,12 +3927,17 @@ function renderScoreChart(session) {
             '#ffb74d'  // Orange
         ];
 
+        // 自分の線は太く・最前面・点を強調
+        const isSelf = player === selfName;
         return {
-            label: player,
+            label: isSelf ? `${player}（あなた）` : player,
             data: data,
             borderColor: colors[index % colors.length],
             backgroundColor: 'rgba(0,0,0,0)',
-            tension: 0.1
+            tension: 0.1,
+            borderWidth: isSelf ? 4 : 2,
+            pointRadius: isSelf ? 3 : 2,
+            order: isSelf ? 0 : 1
         };
     });
 
@@ -3576,66 +3992,83 @@ function renderGameList(session) {
         return;
     }
 
-    // Show latest first
-    [...session.games].reverse().forEach((game, index) => {
-        const card = document.createElement('div');
-        card.className = 'history-card';
+    const deviceUser = localStorage.getItem('deviceUser');
+    const isParticipant = Array.isArray(session.players) && session.players.includes(deviceUser);
+    const isLocked = !!session.locked;
+    const showControls = (deviceUser === 'ヒロム' || isParticipant) && !isLocked;
+    const medals = ['🥇', '🥈', '🥉'];
 
-        // Sort by Rank
+    // 最新の対局を上に表示
+    [...session.games].reverse().forEach((game, index) => {
+        const gameNo = session.games.length - index;
+        const card = document.createElement('div');
+        card.className = 'game-card';
+
         const sortedPlayers = [...game.players].sort((a, b) => a.rank - b.rank);
 
-        let rows = '';
-        sortedPlayers.forEach(p => {
-            const scoreClass = p.finalScore >= 0 ? 'score-positive' : 'score-negative';
-            const scoreStr = p.finalScore > 0 ? `+${p.finalScore}` : p.finalScore;
-            rows += `
-                <tr>
-                    <td>${p.rank}</td>
-                    <td>${p.wind ? `<span style="display:inline-block; width:20px; text-align:center; margin-right:5px; color:#94a3b8; font-weight:bold;">${p.wind}</span>` : ''}${p.name}</td>
-                    <td>${p.rawScore}</td>
-                    <td class="${scoreClass}">${scoreStr}</td>
-                </tr>
-             `;
-        });
+        // 役満バッジ
+        const yakumans = [];
+        game.players.forEach(p => (p.yakuman || []).forEach(y => yakumans.push({ name: p.name, type: y.type })));
+        const yakumanBadge = yakumans.length > 0
+            ? `<span class="yakuman-badge">🀄 役満 ${yakumans.map(y => `${y.name}（${y.type}）`).join('・')}</span>`
+            : '';
 
+        // コンパクト表示（2×2グリッド）
+        const compact = sortedPlayers.map(p => {
+            const medal = p.rank <= 3 ? medals[p.rank - 1] : `${p.rank}`;
+            const sc = p.finalScore >= 0 ? 'score-positive' : 'score-negative';
+            const scStr = p.finalScore > 0 ? `+${p.finalScore}` : `${p.finalScore}`;
+            const isSelf = p.name === deviceUser;
+            const hasYaku = (p.yakuman || []).length > 0;
+            return `
+                <div class="game-pl${isSelf ? ' is-self' : ''}">
+                    <span class="game-pl__rank">${medal}</span>
+                    <span class="game-pl__name">${p.name}${hasYaku ? ' 🀄' : ''}</span>
+                    <span class="game-pl__score ${sc}">${scStr}</span>
+                </div>`;
+        }).join('');
 
-        // Edit/Delete Buttons logic
-        // Only show if Admin OR Participant, AND Session is NOT locked
-        const deviceUser = localStorage.getItem('deviceUser');
-        const isParticipant = Array.isArray(session.players) && session.players.includes(deviceUser);
-        const isLocked = !!session.locked;
-        const showControls = (deviceUser === 'ヒロム' || isParticipant) && !isLocked;
+        // 詳細表示（最終持ち点を含む）
+        const detailRows = sortedPlayers.map(p => {
+            const sc = p.finalScore >= 0 ? 'score-positive' : 'score-negative';
+            const scStr = p.finalScore > 0 ? `+${p.finalScore}` : `${p.finalScore}`;
+            const windHtml = p.wind ? `<span style="display:inline-block; width:18px; text-align:center; color:#94a3b8; font-weight:bold;">${p.wind}</span>` : '';
+            return `<tr><td>${p.rank}</td><td>${windHtml}${p.name}</td><td>${p.rawScore}</td><td class="${sc}">${scStr}</td></tr>`;
+        }).join('');
 
         card.innerHTML = `
-            <div class="history-header">
-                <span>Game ${session.games.length - index}</span>
-                <div>
-                    ${showControls
-                ? `
-                        <button class="btn-secondary btn-sm edit-game-btn" data-id="${game.id}" style="padding: 2px 8px; font-size: 0.8rem; margin-right: 5px;">修正</button>
-                        <button class="btn-danger btn-sm delete-game-btn" data-id="${game.id}" style="padding: 2px 8px; font-size: 0.8rem;">削除</button>
-                        `
-                : ''}
+            <div class="game-card__head">
+                <span class="game-card__no">${gameNo}局</span>
+                ${yakumanBadge}
+                <div class="game-card__actions">
+                    ${showControls ? `
+                        <button class="btn-secondary btn-sm edit-game-btn" data-id="${game.id}" style="padding:2px 8px; font-size:0.8rem;">修正</button>
+                        <button class="btn-danger btn-sm delete-game-btn" data-id="${game.id}" style="padding:2px 8px; font-size:0.8rem;">削除</button>
+                    ` : ''}
                 </div>
             </div>
-            <table class="history-table">
-                <thead>
-                    <tr>
-                        <th width="10%">#</th>
-                        <th width="40%">名前</th>
-                        <th width="25%">最終持ち点</th>
-                        <th width="25%">Pt</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    ${rows}
-                </tbody>
-            </table>
+            <div class="game-card__compact" title="タップで最終持ち点を表示">${compact}</div>
+            <div class="game-card__detail" style="display:none;">
+                <table class="history-table">
+                    <thead><tr><th width="10%">#</th><th width="40%">名前</th><th width="25%">最終持ち点</th><th width="25%">Pt</th></tr></thead>
+                    <tbody>${detailRows}</tbody>
+                </table>
+            </div>
         `;
+
+        // タップで詳細を開閉
+        const compactEl = card.querySelector('.game-card__compact');
+        const detailEl = card.querySelector('.game-card__detail');
+        compactEl.addEventListener('click', () => {
+            const open = detailEl.style.display !== 'none';
+            detailEl.style.display = open ? 'none' : 'block';
+            card.classList.toggle('is-open', !open);
+        });
 
         const editBtn = card.querySelector('.edit-game-btn');
         if (editBtn) {
-            editBtn.addEventListener('click', () => {
+            editBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
                 editingGameId = game.id;
                 navigateTo('input');
                 prepareInputForm(game);
@@ -3644,10 +4077,10 @@ function renderGameList(session) {
 
         const deleteGameBtn = card.querySelector('.delete-game-btn');
         if (deleteGameBtn) {
-            deleteGameBtn.addEventListener('click', async () => {
+            deleteGameBtn.addEventListener('click', async (e) => {
+                e.stopPropagation();
                 if (confirm('この対局結果を削除しますか？')) {
                     await window.AppStorage.removeGameFromSession(session.id, game.id);
-                    // Refresh session view
                     await openSession(session.id);
                 }
             });
@@ -5723,6 +6156,7 @@ document.getElementById('app-title')?.addEventListener('click', () => {
 // Replace the window load event listener with immediate execution for navigation
 setupNavigation();
 setupSessionFormToggles();
+setupNewSetForm();
 
 // Function to handle safe initialization
 function safeInit() {

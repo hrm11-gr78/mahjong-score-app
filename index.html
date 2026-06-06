@@ -232,43 +232,63 @@
                         <input type="date" id="session-date" required>
                     </div>
                     <div class="form-group">
-                        <label>対局者 (4名)</label>
-                        <div class="score-grid">
-                            <div class="player-select-wrapper" id="p1-wrapper">
-                                <select id="p1-select" name="p1" class="user-select" required>
-                                    <option value="" disabled selected>選択...</option>
-                                </select>
-                                <input type="text" name="p1_custom" class="user-input-custom" placeholder="名前..."
-                                    style="display:none;">
-                                <button type="button" class="toggle-guest-btn" data-target="p1"
-                                    title="手動入力切替">🖊️</button>
+                        <div class="seat-toolbar">
+                            <label style="margin:0;">対局者 (4名)</label>
+                            <div class="seat-toolbar__btns">
+                                <button type="button" id="seat-prev-members" class="seat-tool-btn"
+                                    title="前回のメンバーを呼び出す">↩ 前回のメンバー</button>
+                                <button type="button" id="seat-shuffle" class="seat-tool-btn"
+                                    title="座席をシャッフル">🎲 席替え</button>
                             </div>
-                            <div class="player-select-wrapper" id="p2-wrapper">
-                                <select id="p2-select" name="p2" class="user-select" required>
-                                    <option value="" disabled selected>選択...</option>
-                                </select>
-                                <input type="text" name="p2_custom" class="user-input-custom" placeholder="名前..."
-                                    style="display:none;">
-                                <button type="button" class="toggle-guest-btn" data-target="p2"
-                                    title="手動入力切替">🖊️</button>
+                        </div>
+                        <div class="seat-grid">
+                            <div class="seat-card is-empty" id="p1-wrapper">
+                                <div class="seat-avatar" id="p1-avatar" aria-hidden="true">＋</div>
+                                <div class="seat-pick">
+                                    <select id="p1-select" name="p1" class="user-select" required>
+                                        <option value="" disabled selected>選択...</option>
+                                    </select>
+                                    <input type="text" name="p1_custom" class="user-input-custom"
+                                        placeholder="ゲスト名..." style="display:none;">
+                                    <button type="button" class="toggle-guest-btn" data-target="p1"
+                                        title="手動入力切替">🖊️</button>
+                                </div>
                             </div>
-                            <div class="player-select-wrapper" id="p3-wrapper">
-                                <select id="p3-select" name="p3" class="user-select" required>
-                                    <option value="" disabled selected>選択...</option>
-                                </select>
-                                <input type="text" name="p3_custom" class="user-input-custom" placeholder="名前..."
-                                    style="display:none;">
-                                <button type="button" class="toggle-guest-btn" data-target="p3"
-                                    title="手動入力切替">🖊️</button>
+                            <div class="seat-card is-empty" id="p2-wrapper">
+                                <div class="seat-avatar" id="p2-avatar" aria-hidden="true">＋</div>
+                                <div class="seat-pick">
+                                    <select id="p2-select" name="p2" class="user-select" required>
+                                        <option value="" disabled selected>選択...</option>
+                                    </select>
+                                    <input type="text" name="p2_custom" class="user-input-custom"
+                                        placeholder="ゲスト名..." style="display:none;">
+                                    <button type="button" class="toggle-guest-btn" data-target="p2"
+                                        title="手動入力切替">🖊️</button>
+                                </div>
                             </div>
-                            <div class="player-select-wrapper" id="p4-wrapper">
-                                <select id="p4-select" name="p4" class="user-select" required>
-                                    <option value="" disabled selected>選択...</option>
-                                </select>
-                                <input type="text" name="p4_custom" class="user-input-custom" placeholder="名前..."
-                                    style="display:none;">
-                                <button type="button" class="toggle-guest-btn" data-target="p4"
-                                    title="手動入力切替">🖊️</button>
+                            <div class="seat-card is-empty" id="p3-wrapper">
+                                <div class="seat-avatar" id="p3-avatar" aria-hidden="true">＋</div>
+                                <div class="seat-pick">
+                                    <select id="p3-select" name="p3" class="user-select" required>
+                                        <option value="" disabled selected>選択...</option>
+                                    </select>
+                                    <input type="text" name="p3_custom" class="user-input-custom"
+                                        placeholder="ゲスト名..." style="display:none;">
+                                    <button type="button" class="toggle-guest-btn" data-target="p3"
+                                        title="手動入力切替">🖊️</button>
+                                </div>
+                            </div>
+                            <div class="seat-card is-empty" id="p4-wrapper">
+                                <div class="seat-avatar" id="p4-avatar" aria-hidden="true">＋</div>
+                                <div class="seat-pick">
+                                    <select id="p4-select" name="p4" class="user-select" required>
+                                        <option value="" disabled selected>選択...</option>
+                                    </select>
+                                    <input type="text" name="p4_custom" class="user-input-custom"
+                                        placeholder="ゲスト名..." style="display:none;">
+                                    <button type="button" class="toggle-guest-btn" data-target="p4"
+                                        title="手動入力切替">🖊️</button>
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -294,6 +314,10 @@
                                         <input type="number" name="uma3" id="new-set-uma3" value="-10">
                                         <input type="number" name="uma4" id="new-set-uma4" value="-30">
                                     </div>
+                                </div>
+                                <div class="oka-row">
+                                    <span class="oka-row__label">オカ（トップ総取り）</span>
+                                    <span class="oka-row__value" id="new-set-oka">+20.0</span>
                                 </div>
                                 <div class="form-group">
                                     <label>同点時の扱い</label>
@@ -333,6 +357,9 @@
                     <span id="session-title" style="font-weight:bold;"></span>
                 </div>
 
+                <!-- 自分のこの卓での成績バナー（JSで描画） -->
+                <div id="session-self-banner"></div>
+
                 <!-- Total Score Table -->
                 <div class="history-card">
                     <h3>合計スコア</h3>
@@ -366,7 +393,7 @@
                 </div>
                 <button id="new-game-btn" class="btn-primary" style="margin-bottom: 20px;">+ 対局を追加</button>
 
-                <h3>対局履歴</h3>
+                <h3 class="session-section-title">対局履歴</h3>
                 <div id="game-list">
                     <!-- Games injected here -->
                 </div>

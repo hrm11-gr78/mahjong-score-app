@@ -10,139 +10,106 @@ window.Settlement = {
 
         // Ensure expenses array exists
         const expenses = session.expenses || [];
+        const settlement = this.calculate(session);
+        const fmt = (n) => (n > 0 ? '+' : '') + Math.round(n).toLocaleString();
 
-        // 1. Render Header & Expense List
+        // ===== カードヘッダー =====
         let html = `
-            <div class="settlement-section" style="margin-top: 30px; background: #1e293b; border-radius: 12px; border: 1px solid #334155; overflow: hidden;">
-                <div style="background: #0f172a; padding: 15px; border-bottom: 1px solid #334155; display: flex; justify-content: space-between; align-items: center;">
-                    <h3 style="margin: 0; font-size: 1.1rem; display: flex; align-items: center; gap: 8px;">
-                        <span>💸</span> 精算・支払い管理
-                    </h3>
-                    <button id="add-expense-btn" class="btn-secondary" style="font-size: 0.8rem; padding: 4px 10px;">+ 経費追加</button>
+            <div class="settlement-card">
+                <div class="settlement-card__head">
+                    <h3><span>💸</span> 精算・支払い管理</h3>
+                    <button id="add-expense-btn" class="settlement-add-btn">＋ 経費追加</button>
                 </div>
-                
-                <div style="padding: 15px;">
+                <div class="settlement-card__body">
         `;
 
-        // Expenses List
+        // ===== 経費リスト =====
+        html += `<h4 class="settlement-subtitle">経費（場代・飲食代など）</h4>`;
         if (expenses.length === 0) {
-            html += `<p style="color: #94a3b8; font-size: 0.9rem; text-align: center; margin: 10px 0;">経費（場代・食事代など）の記録はありません。</p>`;
+            html += `<div class="expense-empty">経費の記録はありません。</div>`;
         } else {
-            html += `<table style="width: 100%; border-collapse: collapse; margin-bottom: 20px; font-size: 0.9rem;">
-                <thead>
-                    <tr style="border-bottom: 1px solid #334155; color: #cbd5e1;">
-                        <th style="padding: 8px; text-align: left;">項目</th>
-                        <th style="padding: 8px; text-align: left;">対象 (誰の分)</th>
-                        <th style="padding: 8px; text-align: left;">支払者 (立替)</th>
-                        <th style="padding: 8px; text-align: right;">金額</th>
-                        <th style="padding: 8px; text-align: right;">操作</th>
-                    </tr>
-                </thead>
-                <tbody>`;
-
             let totalExpenses = 0;
+            html += `<div class="expense-list">`;
             expenses.forEach((ex, idx) => {
                 totalExpenses += parseInt(ex.amount);
 
-                // Format Targets Display
-                let targetDisplay = '';
+                // 対象表示
+                let targetDisplay;
                 if (ex.targets && Array.isArray(ex.targets)) {
-                    // Start: Show comma separated names
-                    // If target list length equals player length, assume 'All'
-                    if (ex.targets.length === session.players.length) {
-                        targetDisplay = '全員';
-                    } else {
-                        targetDisplay = ex.targets.join(', ');
-                    }
-                } else if (ex.target === 'all') {
-                    // Backward compatibility
+                    targetDisplay = ex.targets.length === session.players.length ? '全員' : ex.targets.join('・');
+                } else if (ex.target === 'all' || !ex.target) {
                     targetDisplay = '全員';
-                } else if (ex.target) {
-                    // Backward compatibility
-                    targetDisplay = ex.target;
                 } else {
-                    targetDisplay = '全員';
+                    targetDisplay = ex.target;
                 }
 
                 html += `
-                    <tr style="border-bottom: 1px solid #1e293b; background: rgba(255,255,255,0.02);">
-                        <td style="padding: 8px;">${ex.note || 'その他'}</td>
-                        <td style="padding: 8px; color: #a78bfa;">${targetDisplay}</td>
-                        <td style="padding: 8px;">${ex.payer}</td>
-                        <td style="padding: 8px; text-align: right;">¥${parseInt(ex.amount).toLocaleString()}</td>
-                        <td style="padding: 8px; text-align: right;">
-                             <button onclick="Settlement.removeExpense('${session.id}', ${idx})" style="background:none; border:none; cursor:pointer; font-size:1rem;">🗑️</button>
-                        </td>
-                    </tr>
+                    <div class="expense-item">
+                        <div class="expense-item__main">
+                            <div class="expense-item__note">${ex.note || 'その他'}</div>
+                            <div class="expense-item__meta">${ex.payer} が立替 ／ <span class="tgt">${targetDisplay}</span> の分</div>
+                        </div>
+                        <span class="expense-item__amount">¥${parseInt(ex.amount).toLocaleString()}</span>
+                        <button class="expense-item__del" onclick="Settlement.removeExpense('${session.id}', ${idx})" title="削除">🗑️</button>
+                    </div>
                 `;
             });
-
-            // Total Row
-            html += `
-                    <tr style="border-top: 1px solid #475569; font-weight: bold;">
-                        <td colspan="3" style="padding: 8px; text-align: right;">合計</td>
-                        <td style="padding: 8px; text-align: right; color: #fbbf24;">¥${totalExpenses.toLocaleString()}</td>
-                        <td></td>
-                    </tr>
-                </tbody>
-            </table>`;
+            html += `</div>`;
+            html += `<div class="expense-total"><span>経費合計</span><b>¥${totalExpenses.toLocaleString()}</b></div>`;
         }
 
-        // 2. Final Settlement Calculation
-        const settlement = this.calculate(session);
+        // ===== 最終収支（プレイヤーごとのカード）=====
+        html += `<h4 class="settlement-subtitle">最終収支（受け取り / 支払い）</h4>`;
+        const sortedBalances = settlement.balances.slice().sort((a, b) => b.final - a.final);
+        html += `<div class="balance-list">`;
+        sortedBalances.forEach(b => {
+            const cls = b.final > 0 ? 'plus' : (b.final < 0 ? 'minus' : 'zero');
+            const tag = b.final > 0 ? '受け取り' : (b.final < 0 ? '支払い' : '精算済');
+            const netExpense = b.paid - b.share;
 
-        // Summary Table (Final Transfer column removed as per request)
-        html += `<h4 style="font-size: 1rem; margin: 20px 0 10px; border-left: 4px solid #8b5cf6; padding-left: 10px;">最終収支</h4>`;
+            // 内訳（0の項目は省略）
+            const parts = [];
+            if (b.gameBalance !== 0) parts.push(`麻雀 ${fmt(b.gameBalance)}`);
+            if (netExpense !== 0) parts.push(`経費 ${fmt(netExpense)}`);
+            const sub = parts.length ? parts.join('<span style="opacity:.4; margin:0 2px;">・</span>') : '増減なし';
 
-        html += `<div style="overflow-x: auto;">
-                    <table style="width: 100%; border-collapse: collapse; font-size: 0.9rem; white-space: nowrap;">
-                    <thead>
-                        <tr style="background: #0f172a;">
-                            <th style="padding: 8px; text-align: left;">名前</th>
-                            <th style="padding: 8px; text-align: right;">麻雀収支</th>
-                            <th style="padding: 8px; text-align: right;">経費立替</th>
-                            <th style="padding: 8px; text-align: right;">支払義務</th>
-                        </tr>
-                    </thead>
-                    <tbody>`;
-
-        settlement.balances.forEach(b => {
             html += `
-                <tr style="border-bottom: 1px solid #334155;">
-                    <td style="padding: 8px; font-weight: bold;">${b.name}</td>
-                    <td style="padding: 8px; text-align: right; color: #94a3b8;">${b.gameBalance > 0 ? '+' : ''}${b.gameBalance.toLocaleString()}</td>
-                    <td style="padding: 8px; text-align: right; color: #94a3b8;">+${b.paid.toLocaleString()}</td>
-                    <td style="padding: 8px; text-align: right; color: #ef4444;">-${b.share.toLocaleString()}</td>
-                </tr>
-             `;
+                <div class="balance-row balance-row--${cls}">
+                    <div class="balance-row__main">
+                        <span class="balance-row__name">${b.name}</span>
+                        <span class="balance-row__final">${fmt(b.final)}<small>円</small></span>
+                    </div>
+                    <div class="balance-row__sub">
+                        <span>${sub}</span>
+                        <span class="balance-tag">${tag}</span>
+                    </div>
+                </div>
+            `;
         });
-        html += `</tbody></table></div>`;
+        html += `</div>`;
 
-        // 3. Payment Instructions
-        html += `<h4 style="font-size: 1rem; margin: 25px 0 10px; border-left: 4px solid #10b981; padding-left: 10px;">送金リスト</h4>`;
-
+        // ===== 送金リスト =====
+        html += `<h4 class="settlement-subtitle settlement-subtitle--green">送金リスト（誰が誰に払う）</h4>`;
         if (settlement.transfers.length === 0) {
-            html += `<div style="padding: 10px; text-align: center; color: #94a3b8;">精算完了（貸借なし）</div>`;
+            html += `<div class="transfer-empty">精算完了（貸し借りなし）</div>`;
         } else {
-            html += `<div style="display: flex; flex-direction: column; gap: 10px;">`;
+            html += `<div class="transfer-list">`;
             settlement.transfers.forEach(t => {
                 html += `
-                    <div style="display: flex; align-items: center; justify-content: space-between; background: rgba(0,0,0,0.2); padding: 10px 15px; border-radius: 8px; border-left: 4px solid #10b981;">
-                        <div style="display: flex; align-items: center; gap: 10px;">
-                            <span style="font-weight: bold;">${t.from}</span>
-                            <span style="color: #94a3b8;">➔</span>
-                            <span style="font-weight: bold;">${t.to}</span>
+                    <div class="transfer-item">
+                        <div class="transfer-item__names">
+                            <span>${t.from}</span>
+                            <span class="transfer-item__arrow">➔</span>
+                            <span>${t.to}</span>
                         </div>
-                        <div style="font-weight: bold; font-size: 1.1rem; color: #fbbf24;">
-                            ¥${t.amount.toLocaleString()}
-                        </div>
+                        <span class="transfer-item__amount">¥${t.amount.toLocaleString()}</span>
                     </div>
-                 `;
+                `;
             });
             html += `</div>`;
         }
 
-        html += `</div></div>`; // Close Main Div
+        html += `</div></div>`; // Close body, card
 
         // Modal for Adding Expense
         html += `
@@ -334,8 +301,13 @@ window.Settlement = {
         });
 
         // 4. Calculate Transfers (Minimizing transactions)
-        let debtors = balances.filter(b => b.final < 0).sort((a, b) => a.final - b.final);
-        let creditors = balances.filter(b => b.final > 0).sort((a, b) => b.final - a.final);
+        // balances[].final は表示用に保持し、送金計算は複製(remaining)で行う
+        let debtors = balances.filter(b => b.final < 0)
+            .map(b => ({ name: b.name, remaining: b.final }))
+            .sort((a, b) => a.remaining - b.remaining);
+        let creditors = balances.filter(b => b.final > 0)
+            .map(b => ({ name: b.name, remaining: b.final }))
+            .sort((a, b) => b.remaining - a.remaining);
 
         const transfers = [];
         let i = 0;
@@ -345,8 +317,8 @@ window.Settlement = {
             let debtor = debtors[i];
             let creditor = creditors[j];
 
-            // amount to settle is min(abs(debtor.final), creditor.final)
-            let amount = Math.min(Math.abs(debtor.final), creditor.final);
+            // amount to settle is min(abs(debtor.remaining), creditor.remaining)
+            let amount = Math.min(Math.abs(debtor.remaining), creditor.remaining);
 
             if (amount > 0) {
                 transfers.push({
@@ -356,11 +328,11 @@ window.Settlement = {
                 });
             }
 
-            debtor.final += amount;
-            creditor.final -= amount;
+            debtor.remaining += amount;
+            creditor.remaining -= amount;
 
-            if (Math.abs(debtor.final) < 1) i++;
-            if (Math.abs(creditor.final) < 1) j++;
+            if (Math.abs(debtor.remaining) < 1) i++;
+            if (Math.abs(creditor.remaining) < 1) j++;
         }
 
         return {
