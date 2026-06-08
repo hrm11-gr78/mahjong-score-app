@@ -3507,6 +3507,9 @@ async function openSession(sessionId) {
         sessionRateSelect.value = session.rate || 0;
         sessionRateSelect.disabled = !canEdit || !!session.locked;
     }
+    // 収支（レート）は参加者・管理者のみ閲覧可。非参加者にはレート行ごと非表示。
+    const rateRow = document.getElementById('session-rate-row');
+    if (rateRow) rateRow.style.display = canEdit ? '' : 'none';
 
     // Finish/Resume Button（参加者・管理者のみ表示）
     if (canEdit) {
@@ -3706,12 +3709,17 @@ async function renderSessionTotal(session) {
     const rate = session.rate || 0;
     const selfName = localStorage.getItem('deviceUser');
 
+    // 収支は参加者・管理者のみ閲覧可（非参加者には列ごと非表示）
+    const isAdmin = selfName === 'ヒロム';
+    const isParticipant = Array.isArray(session.players) && session.players.includes(selfName);
+    const showAmount = rate > 0 && (isAdmin || isParticipant);
+
     // Build Table Header
     let html = `<thead><tr>
         <th>順位</th>
         <th>名前</th>
         <th>合計Pt</th>
-        ${rate > 0 ? '<th>収支</th>' : ''}
+        ${showAmount ? '<th>収支</th>' : ''}
         <th style="font-size:0.8em;">1着</th>
         <th style="font-size:0.8em;">2着</th>
         <th style="font-size:0.8em;">3着</th>
@@ -3724,7 +3732,7 @@ async function renderSessionTotal(session) {
         const scoreStr = score > 0 ? `+${score}` : `${score}`;
 
         let amountHtml = '';
-        if (rate > 0) {
+        if (showAmount) {
             const amount = Math.round(score * rate * 10);
             const amountClass = amount >= 0 ? 'score-positive' : 'score-negative';
             const amountStr = amount > 0 ? `+${amount}` : `${amount}`;
