@@ -153,6 +153,13 @@ async function handleAuthStateChanged(user, linkedUser) {
 
     localStorage.setItem('deviceUser', linkedUser.name); // Sync local storage for compat
 
+    // 既存の myMembers を friends へ移行（一回限り・冪等）。リスト描画前に実行する。
+    try {
+        await window.AppStorage.migrateMyMembersToFriends(linkedUser.name);
+    } catch (e) {
+        console.error("friends migration failed:", e);
+    }
+
     // Load Data
     try {
         await Promise.all([
@@ -160,7 +167,8 @@ async function handleAuthStateChanged(user, linkedUser) {
             renderUserList(),
             renderSessionList(),
             loadSettingsToForm(),
-            loadNewSetFormDefaults()
+            loadNewSetFormDefaults(),
+            updateFriendBadge()
         ]);
 
         if (rouletteCanvas) {
@@ -491,6 +499,11 @@ function navigateTo(targetId) {
     // ホームは履歴ファースト：表示のたびに新規セットフォームは畳む
     if (targetId === 'home') {
         setNewSetPanel(false);
+    }
+    // 成績タブを開くたびにフレンド一覧・受信申請・バッジを最新化（onSnapshot不使用）
+    if (targetId === 'users') {
+        renderUserList();
+        updateFriendBadge();
     }
 
     // ボトムナビのアクティブ表示（詳細画面は親タブを点灯）
@@ -1110,14 +1123,16 @@ if (reauthSubmitBtn) {
 
 // --- User Management ---
 async function renderUserOptions() {
-    const allUsers = await window.AppStorage.getUsers();
+    // プレイヤー選択・プロフィール選択は正式なアカウントユーザーのみ。
+    // ゲストは「ゲスト入力」モードで都度手入力する想定。
+    const allUsers = await window.AppStorage.getAccountUsers();
 
     // For the User Link Screen, we only want unlinked users
     const unlinkedUsers = await window.AppStorage.getUnlinkedUsers();
 
-    // デバイスユーザーのマイメンバーを取得
+    // デバイスユーザーのフレンドを取得
     const deviceUser = localStorage.getItem('deviceUser');
-    const myMembers = deviceUser ? await window.AppStorage.getMyMembers(deviceUser) : [];
+    const myMembers = deviceUser ? await window.AppStorage.getFriends(deviceUser) : [];
 
     // Update all user-select dropdowns (Game Setup & Settings)
     const selects = document.querySelectorAll('.user-select');
@@ -1140,14 +1155,14 @@ async function renderUserOptions() {
         }
 
         if (isPlayerSelect && myMembers.length > 0) {
-            // マイメンバー + 自分を上位グループに、残りを下位グループに分ける
+            // フレンド + 自分を上位グループに、残りを下位グループに分ける
             const prioritySet = new Set([...myMembers, ...(deviceUser ? [deviceUser] : [])]);
             const priorityUsers = userSource.filter(u => prioritySet.has(u));
             const otherUsers = userSource.filter(u => !prioritySet.has(u));
 
             if (priorityUsers.length > 0) {
                 const groupA = document.createElement('optgroup');
-                groupA.label = 'マイメンバー';
+                groupA.label = 'フレンド';
                 priorityUsers.forEach(user => {
                     const opt = document.createElement('option');
                     opt.value = user;
@@ -1878,12 +1893,15 @@ if (!document.getElementById('btn-spin-style')) {
  * @param {string} deviceUser - デバイスユーザー名
  * @param {string[]} allUsers - 全ユーザー名の配列
  */
-async function renderMyMemberSection(deviceUser, allUsers) {
-    // マイメンバーセクションの取得または作成
-    let section = document.getElementById('my-member-section');
+async function renderFriendSection(deviceUser, allUsers) {
+    // フレンドセクションの取得または作成（旧 my-member-section の位置を踏襲）
+    let section = document.getElementById('friend-section');
     if (!section) {
+        // 旧バージョンの残骸があれば撤去
+        const old = document.getElementById('my-member-section');
+        if (old) old.remove();
         section = document.createElement('div');
-        section.id = 'my-member-section';
+        section.id = 'friend-section';
     }
     // 毎回 userList の直後に配置（既存要素でも正しい位置に移動）
     if (userList && userList.parentNode) {
@@ -1896,111 +1914,166 @@ async function renderMyMemberSection(deviceUser, allUsers) {
         return;
     }
 
-    const myMembers = await window.AppStorage.getMyMembers(deviceUser);
+    const [friends, requests] = await Promise.all([
+        window.AppStorage.getFriends(deviceUser),
+        window.AppStorage.getFriendRequests(deviceUser)
+    ]);
+    const reqIn = requests.in || [];
+    const reqOut = requests.out || [];
 
-    // 追加可能なユーザー（自分・既存マイメンバー以外）
-    const candidates = allUsers.filter(u => u !== deviceUser && !myMembers.includes(u));
+    // フレンド一覧の表示はアカウントユーザー（allUsers = getAccountUsers）のみ。
+    // 旧データに混ざったゲスト（uidなし）は一覧に出さない。
+    const accountSet = new Set(allUsers);
+    const accountFriends = friends.filter(f => accountSet.has(f));
 
-    // HTMLを構築
+    // 申請を送れる候補（自分・既存フレンド・送信済み・受信中 を除外）
+    const excluded = new Set([deviceUser, ...friends, ...reqOut, ...reqIn]);
+    const candidates = allUsers.filter(u => !excluded.has(u));
+
+    // フレンド/申請の行を作るヘルパー（data-action / data-name で委譲処理）
+    const row = (name, buttons) => `
+        <div style="display:flex; align-items:center; gap:8px; padding:8px 10px; background:#0f172a; border:1px solid #334155; border-radius:8px; margin-bottom:6px;">
+            <span style="flex:1; min-width:0; color:#e2e8f0; font-size:0.9rem; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${escapeHtml(name)}</span>
+            ${buttons}
+        </div>`;
+    const btn = (action, name, label, style) =>
+        `<button data-action="${action}" data-name="${escapeHtml(name)}" style="${style} padding:6px 12px; border-radius:8px; cursor:pointer; font-size:0.82rem; white-space:nowrap; flex-shrink:0; border:none;">${label}</button>`;
+
+    const inHtml = reqIn.map(name => row(name,
+        btn('accept', name, '承認', 'background:linear-gradient(135deg,#10b981,#059669); color:white;') +
+        `<span style="width:6px;"></span>` +
+        btn('decline', name, '拒否', 'background:#7f1d1d; color:#fca5a5; border:1px solid #ef4444;')
+    )).join('');
+
+    const outHtml = reqOut.map(name => row(name,
+        btn('cancel', name, '取消', 'background:#334155; color:#cbd5e1;')
+    )).join('');
+
+    const friendsHtml = accountFriends.length > 0
+        ? accountFriends.map(name => row(name, btn('remove', name, '解除', 'background:#7f1d1d; color:#fca5a5; border:1px solid #ef4444;'))).join('')
+        : `<div style="color:#64748b; font-size:0.85rem; padding:6px 2px;">まだフレンドがいません</div>`;
+
     section.innerHTML = `
         <div style="background:#1e293b; border:1px solid #334155; border-radius:10px; padding:16px; margin-top:20px;">
             <h3 style="color:#e2e8f0; font-size:1rem; margin:0 0 14px 0; display:flex; align-items:center; gap:8px;">
-                👥 マイメンバー管理
-                <span style="font-size:0.75rem; color:#94a3b8; font-weight:normal;">(${myMembers.length}人登録中)</span>
+                👥 フレンド管理
+                <span style="font-size:0.75rem; color:#94a3b8; font-weight:normal;">(${accountFriends.length}人)</span>
             </h3>
 
-            <!-- 追加フォーム -->
-            <div style="margin-bottom:10px;">
-                <div style="font-size:0.8rem; color:#94a3b8; margin-bottom:6px;">メンバーを追加</div>
+            <!-- 申請を送る -->
+            <div style="margin-bottom:16px;">
+                <div style="font-size:0.8rem; color:#94a3b8; margin-bottom:6px;">フレンド申請を送る</div>
                 <div style="display:flex; gap:8px; align-items:center;">
                     <div style="flex:1; min-width:0;">
                         <input
-                            id="my-member-add-input"
+                            id="friend-add-input"
                             type="text"
                             placeholder="ユーザー名を入力..."
-                            list="my-member-add-candidates"
+                            list="friend-add-candidates"
                             style="width:100%; box-sizing:border-box; padding:8px 12px; background:#0f172a; border:1px solid #475569; border-radius:8px; color:#e2e8f0; font-size:0.9rem;"
                             autocomplete="off"
                         />
-                        <datalist id="my-member-add-candidates">
-                            ${candidates.map(name => `<option value="${name}">`).join('')}
+                        <datalist id="friend-add-candidates">
+                            ${candidates.map(name => `<option value="${escapeHtml(name)}">`).join('')}
                         </datalist>
                     </div>
                     <button
-                        id="my-member-add-btn"
+                        id="friend-add-btn"
                         style="padding:8px 16px; background:linear-gradient(135deg,#6366f1,#8b5cf6); color:white; border:none; border-radius:8px; cursor:pointer; font-size:0.9rem; white-space:nowrap; flex-shrink:0;"
-                    >追加</button>
+                    >申請</button>
                 </div>
             </div>
 
-            <!-- 解除フォーム（登録中メンバーがいる場合のみ表示） -->
-            ${myMembers.length > 0 ? `
+            ${reqIn.length > 0 ? `
+            <div style="margin-bottom:16px;">
+                <div style="font-size:0.8rem; color:#94a3b8; margin-bottom:6px;">受信した申請 (${reqIn.length})</div>
+                ${inHtml}
+            </div>` : ''}
+
+            ${reqOut.length > 0 ? `
+            <div style="margin-bottom:16px;">
+                <div style="font-size:0.8rem; color:#94a3b8; margin-bottom:6px;">送信済みの申請 (${reqOut.length})</div>
+                ${outHtml}
+            </div>` : ''}
+
             <div>
-                <div style="font-size:0.8rem; color:#94a3b8; margin-bottom:6px;">メンバーを解除</div>
-                <div style="display:flex; gap:8px; align-items:center;">
-                    <div style="flex:1; min-width:0;">
-                        <input
-                            id="my-member-remove-input"
-                            type="text"
-                            placeholder="解除するユーザー名を入力..."
-                            list="my-member-remove-candidates"
-                            style="width:100%; box-sizing:border-box; padding:8px 12px; background:#0f172a; border:1px solid #ef4444; border-radius:8px; color:#e2e8f0; font-size:0.9rem;"
-                            autocomplete="off"
-                        />
-                        <datalist id="my-member-remove-candidates">
-                            ${myMembers.map(name => `<option value="${name}">`).join('')}
-                        </datalist>
-                    </div>
-                    <button
-                        id="my-member-remove-btn"
-                        style="padding:8px 16px; background:#7f1d1d; color:#fca5a5; border:1px solid #ef4444; border-radius:8px; cursor:pointer; font-size:0.9rem; white-space:nowrap; flex-shrink:0;"
-                    >解除</button>
-                </div>
+                <div style="font-size:0.8rem; color:#94a3b8; margin-bottom:6px;">フレンド一覧</div>
+                ${friendsHtml}
             </div>
-            ` : ''}
         </div>
     `;
 
-    // 「追加」ボタンのイベント
-    const addBtn = document.getElementById('my-member-add-btn');
-    const addInput = document.getElementById('my-member-add-input');
+    // 申請送信
+    const addBtn = document.getElementById('friend-add-btn');
+    const addInput = document.getElementById('friend-add-input');
     if (addBtn && addInput) {
-        const doAdd = async () => {
+        const doSend = async () => {
             const targetName = addInput.value.trim();
             if (!targetName) { showToast('ユーザー名を入力してください'); return; }
-            if (targetName === deviceUser) { showToast('自分自身は追加できません'); return; }
-            if (myMembers.includes(targetName)) { showToast(`「${targetName}」はすでにマイメンバーです`); return; }
+            if (targetName === deviceUser) { showToast('自分自身には申請できません'); return; }
             if (!allUsers.includes(targetName)) { showToast(`「${targetName}」というユーザーは見つかりません`); return; }
-            const success = await window.AppStorage.addMyMember(deviceUser, targetName);
-            if (success) {
-                addInput.value = '';
-                showToast(`「${targetName}」をマイメンバーに追加しました`);
-                // ユーザー一覧とセット作成フォームの両方を更新
-                await Promise.all([renderUserList(), renderUserOptions()]);
-            } else {
-                showToast('追加に失敗しました');
-            }
+            const { status } = await window.AppStorage.sendFriendRequest(deviceUser, targetName);
+            const messages = {
+                sent: `「${targetName}」にフレンド申請を送りました`,
+                auto_accepted: `「${targetName}」とフレンドになりました`,
+                already_sent: `「${targetName}」には既に申請済みです`,
+                already_friend: `「${targetName}」とは既にフレンドです`,
+                error: '申請に失敗しました'
+            };
+            showToast(messages[status] || messages.error);
+            if (status === 'sent' || status === 'auto_accepted') addInput.value = '';
+            await Promise.all([renderUserList(), renderUserOptions(), updateFriendBadge()]);
         };
-        addBtn.addEventListener('click', doAdd);
-        addInput.addEventListener('keydown', e => { if (e.key === 'Enter') doAdd(); });
+        addBtn.addEventListener('click', doSend);
+        addInput.addEventListener('keydown', e => { if (e.key === 'Enter') doSend(); });
     }
 
-    // 「解除」ボタンのイベント
-    const removeBtn = document.getElementById('my-member-remove-btn');
-    const removeInput = document.getElementById('my-member-remove-input');
-    if (removeBtn && removeInput) {
-        const doRemove = async () => {
-            const targetName = removeInput.value.trim();
-            if (!targetName) { showToast('解除するユーザー名を入力してください'); return; }
-            if (!myMembers.includes(targetName)) { showToast(`「${targetName}」はマイメンバーに登録されていません`); return; }
-            if (confirm(`「${targetName}」をマイメンバーから解除しますか？`)) {
-                await window.AppStorage.removeMyMember(deviceUser, targetName);
-                showToast(`「${targetName}」をマイメンバーから解除しました`);
-                await Promise.all([renderUserList(), renderUserOptions()]);
-            }
-        };
-        removeBtn.addEventListener('click', doRemove);
-        removeInput.addEventListener('keydown', e => { if (e.key === 'Enter') doRemove(); });
+    // 承認/拒否/取消/解除（イベント委譲）。section要素は再描画で使い回すため
+    // addEventListener だとリスナーが累積する。onclick で常に単一ハンドラにする。
+    section.onclick = async (e) => {
+        const target = e.target.closest('button[data-action]');
+        if (!target) return;
+        const action = target.dataset.action;
+        const name = target.dataset.name;
+        if (!name) return;
+        if (action === 'accept') {
+            await window.AppStorage.acceptFriendRequest(deviceUser, name);
+            showToast(`「${name}」とフレンドになりました`);
+        } else if (action === 'decline') {
+            await window.AppStorage.declineFriendRequest(deviceUser, name);
+            showToast(`「${name}」の申請を拒否しました`);
+        } else if (action === 'cancel') {
+            await window.AppStorage.cancelFriendRequest(deviceUser, name);
+            showToast(`「${name}」への申請を取り消しました`);
+        } else if (action === 'remove') {
+            if (!confirm(`「${name}」とのフレンドを解除しますか？`)) return;
+            await window.AppStorage.removeFriend(deviceUser, name);
+            showToast(`「${name}」とのフレンドを解除しました`);
+        } else {
+            return;
+        }
+        await Promise.all([renderUserList(), renderUserOptions(), updateFriendBadge()]);
+    };
+}
+
+// ヘッダーの未対応フレンド申請バッジを更新する（受信申請の件数を表示）。
+// onSnapshot は使わず、初期化・成績タブ遷移・フレンド操作後に呼ぶ。
+async function updateFriendBadge() {
+    const badge = document.getElementById('friend-badge');
+    if (!badge) return;
+    const deviceUser = localStorage.getItem('deviceUser');
+    if (!deviceUser) { badge.style.display = 'none'; return; }
+    let count = 0;
+    try {
+        count = await window.AppStorage.getIncomingRequestCount(deviceUser);
+    } catch (_) {
+        count = 0;
+    }
+    if (count > 0) {
+        badge.textContent = count > 99 ? '99+' : String(count);
+        badge.style.display = 'block';
+    } else {
+        badge.style.display = 'none';
     }
 }
 
@@ -2059,19 +2132,20 @@ let leaderboardSort = 'score';
 async function renderUserList() {
     if (!userList) return;
 
+    // 成績一覧は正式なアカウントユーザーのみ（ゲストは除外）
     const [allUsers, sessions] = await Promise.all([
-        window.AppStorage.getUsers(),
+        window.AppStorage.getAccountUsers(),
         window.AppStorage.getSessions()
     ]);
 
     const deviceUser = localStorage.getItem('deviceUser');
     const isAdmin = deviceUser === 'ヒロム';
 
-    // マイメンバーフィルタリング: 管理者は全員表示、一般ユーザーは自分+マイメンバーのみ
+    // フレンドフィルタリング: 管理者は全員表示、一般ユーザーは自分+フレンドのみ
     let users = allUsers;
     if (!isAdmin && deviceUser) {
-        const myMembers = await window.AppStorage.getMyMembers(deviceUser);
-        const visibleNames = new Set([deviceUser, ...myMembers]);
+        const friends = await window.AppStorage.getFriends(deviceUser);
+        const visibleNames = new Set([deviceUser, ...friends]);
         users = allUsers.filter(u => visibleNames.has(u));
     } else if (!deviceUser) {
         // デバイスユーザー未設定は自分を特定できないので全員非表示
@@ -2094,7 +2168,7 @@ async function renderUserList() {
 
     if (users.length === 0) {
         board.innerHTML = `<div style="text-align:center; color:#94a3b8; padding:40px 0; font-size:0.9rem;">表示できるユーザーがいません。</div>`;
-        await renderMyMemberSection(deviceUser, allUsers);
+        await renderFriendSection(deviceUser, allUsers);
         return;
     }
 
@@ -2310,8 +2384,8 @@ async function renderUserList() {
         row.style.cursor = 'pointer';
     });
 
-    // ユーザー一覧描画後にマイメンバー管理UIを描画
-    await renderMyMemberSection(deviceUser, allUsers);
+    // ユーザー一覧描画後にフレンド管理UIを描画
+    await renderFriendSection(deviceUser, allUsers);
 }
 
 // --- User Detail ---
@@ -3163,16 +3237,16 @@ if (sessionSetupForm) {
         try {
             const session = await window.AppStorage.createSession(getDate, players, rules);
 
-            // セッション参加者を自動的にマイメンバーへ追加し、UIを即時更新
+            // 同卓者を「暗黙の同意」として相互フレンド化し、UIを即時更新
             try {
                 const currentDeviceUser = localStorage.getItem('deviceUser');
                 if (currentDeviceUser) {
-                    await window.AppStorage.autoAddMembersFromSession(currentDeviceUser, players);
-                    // マイメンバーが更新されたのでユーザー一覧とセット作成フォームを即時反映
-                    await Promise.all([renderUserList(), renderUserOptions()]);
+                    await window.AppStorage.autoFriendFromSession(currentDeviceUser, players);
+                    // フレンドが更新されたのでユーザー一覧とセット作成フォームを即時反映
+                    await Promise.all([renderUserList(), renderUserOptions(), updateFriendBadge()]);
                 }
             } catch (e) {
-                console.error("マイメンバー自動追加エラー:", e);
+                console.error("フレンド自動追加エラー:", e);
             }
 
             // Auto-link to League
@@ -3682,8 +3756,8 @@ async function renderSessionTotal(session) {
     const totals = {};
     const rankCounts = {}; // { playerName: [1st, 2nd, 3rd, 4th] }
 
-    // Fetch registered users to check for guests
-    const registeredUsers = await window.AppStorage.getUsers();
+    // 正式なアカウントユーザーのみクリック可（ゲスト名はユーザー詳細を持たない）
+    const registeredUsers = await window.AppStorage.getAccountUsers();
 
     session.players.forEach(p => {
         totals[p] = 0;

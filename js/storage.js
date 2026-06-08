@@ -139,6 +139,36 @@ window.AppStorage.getUnlinkedUsers = async function () {
     }
 };
 
+// アカウント（uid あり）として登録された正式ユーザーのみを返す。
+// セット作成時に手入力された「ゲスト」（uid なし）は除外する。
+window.AppStorage.getAccountUsers = async function () {
+    try {
+        const snapshot = await db.collection("users").get();
+        const users = [];
+        snapshot.forEach((doc) => {
+            // uid を持つドキュメント = サインアップ→紐付け済みの正式ユーザー
+            if (doc.data().uid) users.push(doc.id);
+        });
+        users.sort((a, b) => a.localeCompare(b, 'ja'));
+        return users;
+    } catch (e) {
+        console.error("getAccountUsers failed:", e);
+        return [];
+    }
+};
+
+// 指定名が正式なアカウントユーザー（uid あり）かどうか。ゲストや未登録名は false。
+window.AppStorage.isAccountUser = async function (name) {
+    if (!name) return false;
+    try {
+        const doc = await db.collection("users").doc(name).get();
+        return !!(doc.exists && doc.data().uid);
+    } catch (e) {
+        console.error("isAccountUser failed:", e);
+        return false;
+    }
+};
+
 window.AppStorage.addUser = async function (name) {
     try {
         const userRef = db.collection("users").doc(name);
@@ -949,5 +979,258 @@ window.AppStorage.autoAddMembersFromSession = async function (deviceUser, player
     const targets = playerNames.filter(name => name && name !== deviceUser);
     for (const target of targets) {
         await window.AppStorage.addMyMember(deviceUser, target);
+    }
+};
+
+// --- フレンド ---
+// データモデル: users/{name} に friends / friendRequestsIn / friendRequestsOut（いずれも string[]）を持つ。
+// 不変条件: A.friends∋B ⟺ B.friends∋A、A.out∋B ⟺ B.in∋A。
+// 整合維持のため双方向の更新は db.batch() + set(merge:true) で一括コミットする
+// （Security Rules を入れない方針のため、片側だけ書けて壊れるのを最小化）。
+
+/** Firestore の arrayUnion ショートハンド */
+function _arrUnion(value) {
+    return firebase.firestore.FieldValue.arrayUnion(value);
+}
+/** Firestore の arrayRemove ショートハンド */
+function _arrRemove(value) {
+    return firebase.firestore.FieldValue.arrayRemove(value);
+}
+/** users コレクションのドキュメント参照 */
+function _userRef(name) {
+    return db.collection("users").doc(name);
+}
+
+/**
+ * 指定ユーザーのフレンド一覧を取得する
+ * @param {string} userName
+ * @returns {string[]}
+ */
+window.AppStorage.getFriends = async function (userName) {
+    if (!userName) return [];
+    try {
+        const doc = await _userRef(userName).get();
+        return doc.exists ? (doc.data().friends || []) : [];
+    } catch (e) {
+        console.error("getFriends failed:", e);
+        return [];
+    }
+};
+
+/**
+ * 受信申請・送信申請を取得する
+ * @param {string} userName
+ * @returns {{in: string[], out: string[]}}
+ */
+window.AppStorage.getFriendRequests = async function (userName) {
+    if (!userName) return { in: [], out: [] };
+    try {
+        const doc = await _userRef(userName).get();
+        if (!doc.exists) return { in: [], out: [] };
+        const data = doc.data();
+        return { in: data.friendRequestsIn || [], out: data.friendRequestsOut || [] };
+    } catch (e) {
+        console.error("getFriendRequests failed:", e);
+        return { in: [], out: [] };
+    }
+};
+
+/**
+ * 受信申請の件数（バッジ用の軽量版）
+ * @param {string} userName
+ * @returns {number}
+ */
+window.AppStorage.getIncomingRequestCount = async function (userName) {
+    if (!userName) return 0;
+    try {
+        const doc = await _userRef(userName).get();
+        if (!doc.exists) return 0;
+        return (doc.data().friendRequestsIn || []).length;
+    } catch (e) {
+        console.error("getIncomingRequestCount failed:", e);
+        return 0;
+    }
+};
+
+/**
+ * 2ユーザーを相互フレンドにし、双方の申請リストから掃除する（内部共通処理）
+ * @param {string} a
+ * @param {string} b
+ */
+async function _commitFriendship(a, b) {
+    const batch = db.batch();
+    batch.set(_userRef(a), {
+        friends: _arrUnion(b),
+        friendRequestsIn: _arrRemove(b),
+        friendRequestsOut: _arrRemove(b)
+    }, { merge: true });
+    batch.set(_userRef(b), {
+        friends: _arrUnion(a),
+        friendRequestsIn: _arrRemove(a),
+        friendRequestsOut: _arrRemove(a)
+    }, { merge: true });
+    await batch.commit();
+}
+
+/**
+ * フレンド申請を送る。状況に応じて自動承認・重複検知を行う。
+ * @param {string} me
+ * @param {string} target
+ * @returns {{status: 'sent'|'auto_accepted'|'already_sent'|'already_friend'|'error'}}
+ */
+window.AppStorage.sendFriendRequest = async function (me, target) {
+    if (!me || !target || me === target) return { status: 'error' };
+    try {
+        const myDoc = await _userRef(me).get();
+        const data = myDoc.exists ? myDoc.data() : {};
+        const friends = data.friends || [];
+        const reqIn = data.friendRequestsIn || [];
+        const reqOut = data.friendRequestsOut || [];
+
+        if (friends.includes(target)) return { status: 'already_friend' };
+        // 相手が先に自分へ申請していた → 自動承認で即フレンド成立
+        if (reqIn.includes(target)) {
+            await _commitFriendship(me, target);
+            return { status: 'auto_accepted' };
+        }
+        if (reqOut.includes(target)) return { status: 'already_sent' };
+
+        const batch = db.batch();
+        batch.set(_userRef(me), { friendRequestsOut: _arrUnion(target) }, { merge: true });
+        batch.set(_userRef(target), { friendRequestsIn: _arrUnion(me) }, { merge: true });
+        await batch.commit();
+        return { status: 'sent' };
+    } catch (e) {
+        console.error("sendFriendRequest failed:", e);
+        return { status: 'error' };
+    }
+};
+
+/**
+ * 受信した申請を承認する（双方を相互フレンドにする）
+ * @param {string} me
+ * @param {string} requester 申請者
+ * @returns {boolean}
+ */
+window.AppStorage.acceptFriendRequest = async function (me, requester) {
+    if (!me || !requester || me === requester) return false;
+    try {
+        await _commitFriendship(me, requester);
+        return true;
+    } catch (e) {
+        console.error("acceptFriendRequest failed:", e);
+        return false;
+    }
+};
+
+/**
+ * 受信した申請を拒否する（自分のin・相手のoutから除去するのみ）
+ * @param {string} me
+ * @param {string} requester
+ * @returns {boolean}
+ */
+window.AppStorage.declineFriendRequest = async function (me, requester) {
+    if (!me || !requester) return false;
+    try {
+        const batch = db.batch();
+        batch.set(_userRef(me), { friendRequestsIn: _arrRemove(requester) }, { merge: true });
+        batch.set(_userRef(requester), { friendRequestsOut: _arrRemove(me) }, { merge: true });
+        await batch.commit();
+        return true;
+    } catch (e) {
+        console.error("declineFriendRequest failed:", e);
+        return false;
+    }
+};
+
+/**
+ * 送信済みの申請を取り消す（自分のout・相手のinから除去するのみ）
+ * @param {string} me
+ * @param {string} target
+ * @returns {boolean}
+ */
+window.AppStorage.cancelFriendRequest = async function (me, target) {
+    if (!me || !target) return false;
+    try {
+        const batch = db.batch();
+        batch.set(_userRef(me), { friendRequestsOut: _arrRemove(target) }, { merge: true });
+        batch.set(_userRef(target), { friendRequestsIn: _arrRemove(me) }, { merge: true });
+        await batch.commit();
+        return true;
+    } catch (e) {
+        console.error("cancelFriendRequest failed:", e);
+        return false;
+    }
+};
+
+/**
+ * フレンドを解除する（双方のfriendsから除去）
+ * @param {string} me
+ * @param {string} target
+ * @returns {boolean}
+ */
+window.AppStorage.removeFriend = async function (me, target) {
+    if (!me || !target) return false;
+    try {
+        const batch = db.batch();
+        batch.set(_userRef(me), { friends: _arrRemove(target) }, { merge: true });
+        batch.set(_userRef(target), { friends: _arrRemove(me) }, { merge: true });
+        await batch.commit();
+        return true;
+    } catch (e) {
+        console.error("removeFriend failed:", e);
+        return false;
+    }
+};
+
+/**
+ * セッション参加者を「暗黙の同意」として即・相互フレンド化する（申請ステップを飛ばす）。
+ * 同卓した相手の成績が見えなくなる退行を防ぐための処理。
+ * @param {string} deviceUser
+ * @param {string[]} playerNames
+ */
+window.AppStorage.autoFriendFromSession = async function (deviceUser, playerNames) {
+    if (!deviceUser || !Array.isArray(playerNames)) return;
+    const targets = [...new Set(playerNames.filter(name => name && name !== deviceUser))];
+    for (const target of targets) {
+        try {
+            // ゲスト（アカウント未作成 = uid なし）は自動フレンド化しない
+            const doc = await _userRef(target).get();
+            if (!doc.exists || !doc.data().uid) continue;
+            await _commitFriendship(deviceUser, target);
+        } catch (e) {
+            console.error("autoFriendFromSession failed for", target, e);
+        }
+    }
+};
+
+/**
+ * 既存の myMembers を friends へ移行する（一回限り・冪等）。
+ * friendsMigrated フラグで二重実行を防止。片方向 myMembers も相互フレンド化する
+ * （既存の暗黙同意を尊重）。
+ * @param {string} me
+ */
+window.AppStorage.migrateMyMembersToFriends = async function (me) {
+    if (!me) return;
+    try {
+        const doc = await _userRef(me).get();
+        if (!doc.exists) return;
+        const data = doc.data();
+        if (data.friendsMigrated) return;
+
+        const myMembers = data.myMembers || [];
+        const batch = db.batch();
+        for (const target of myMembers) {
+            if (!target || target === me) continue;
+            // ゲスト（uid なし）は移行しない。正式ユーザー同士のみフレンド化する
+            const td = await _userRef(target).get();
+            if (!td.exists || !td.data().uid) continue;
+            batch.set(_userRef(me), { friends: _arrUnion(target) }, { merge: true });
+            batch.set(_userRef(target), { friends: _arrUnion(me) }, { merge: true });
+        }
+        batch.set(_userRef(me), { friendsMigrated: true }, { merge: true });
+        await batch.commit();
+    } catch (e) {
+        console.error("migrateMyMembersToFriends failed:", e);
     }
 };

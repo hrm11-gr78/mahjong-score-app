@@ -1746,6 +1746,7 @@ input[type=number] {
 
 /* ヘッダーアイコン：ガラスチップ + ラインアイコン */
 .header-icon {
+    position: relative;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -1776,6 +1777,26 @@ input[type=number] {
 
 .header-icon:active {
     transform: scale(0.93);
+}
+
+/* フレンド申請の未対応件数バッジ */
+.header-badge {
+    position: absolute;
+    top: -4px;
+    right: -4px;
+    min-width: 18px;
+    height: 18px;
+    padding: 0 5px;
+    box-sizing: border-box;
+    border-radius: 9px;
+    background: #ef4444;
+    color: #fff;
+    font-size: 0.68rem;
+    font-weight: 700;
+    line-height: 18px;
+    text-align: center;
+    border: 2px solid var(--bg-color, #121212);
+    pointer-events: none;
 }
 
 /* 設定アイコンはホバーでシアンに発光しつつ回転 */
