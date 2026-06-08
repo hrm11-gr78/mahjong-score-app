@@ -969,6 +969,56 @@ button.btn-danger {
     padding-left: 4px;
 }
 
+/* 開催中セクションの見出し */
+.session-group-header--live {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    color: #4ade80;
+}
+
+.session-group-header--live .live-dot {
+    width: 8px;
+    height: 8px;
+}
+
+.session-group-header__count {
+    font-size: 0.7rem;
+    font-weight: 700;
+    color: #052e16;
+    background: #4ade80;
+    border-radius: 999px;
+    min-width: 18px;
+    height: 18px;
+    padding: 0 5px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.session-group-header--past {
+    color: var(--text-secondary);
+    margin-top: var(--spacing-lg);
+}
+
+/* 点滅する「記録中」ドット */
+.live-dot {
+    display: inline-block;
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: #4ade80;
+    box-shadow: 0 0 0 0 rgba(74, 222, 128, 0.6);
+    animation: live-pulse 1.6s ease-out infinite;
+    flex-shrink: 0;
+}
+
+@keyframes live-pulse {
+    0% { box-shadow: 0 0 0 0 rgba(74, 222, 128, 0.55); }
+    70% { box-shadow: 0 0 0 6px rgba(74, 222, 128, 0); }
+    100% { box-shadow: 0 0 0 0 rgba(74, 222, 128, 0); }
+}
+
 .session-card {
     display: flex;
     align-items: flex-start;
@@ -979,6 +1029,28 @@ button.btn-danger {
     border-radius: var(--border-radius);
     cursor: pointer;
     transition: background-color 0.15s, transform 0.05s;
+}
+
+/* 開催中のセットカード（強調） */
+.session-card--live {
+    background: linear-gradient(135deg, rgba(74, 222, 128, 0.1), var(--surface-color) 60%);
+    border: 1px solid rgba(74, 222, 128, 0.4);
+    box-shadow: 0 2px 12px rgba(74, 222, 128, 0.08);
+}
+
+.session-card--live:hover {
+    background: linear-gradient(135deg, rgba(74, 222, 128, 0.16), #262626 60%);
+}
+
+/* 「記録中」バッジ（対局数の隣） */
+.session-card__live {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    margin-left: 8px;
+    font-size: 0.72rem;
+    font-weight: 700;
+    color: #4ade80;
 }
 
 .session-card:hover {
@@ -1972,6 +2044,659 @@ section.active {
         font-size: 0.7rem;
     }
 }
+
+/* =======================================================================
+   成績画面リニューアル（A: 個人詳細 / B: 一覧ランキング / C: 称号・モチベ）
+   ======================================================================= */
+
+/* ---- B. 一覧リーダーボード ---- */
+.lb-toolbar {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-wrap: wrap;
+    margin-bottom: 12px;
+}
+
+.lb-toolbar__label {
+    font-size: 0.72rem;
+    color: #64748b;
+    letter-spacing: 1px;
+    margin-right: 2px;
+}
+
+.lb-sort-btn {
+    padding: 4px 12px;
+    border-radius: 20px;
+    border: 1px solid #475569;
+    background: rgba(51, 65, 85, 0.8);
+    color: #e2e8f0;
+    font-size: 0.78rem;
+    cursor: pointer;
+    transition: all 0.15s;
+}
+
+.lb-sort-btn.active {
+    background: var(--primary-color, #bb86fc);
+    color: #000;
+    border-color: var(--primary-color, #bb86fc);
+    font-weight: bold;
+}
+
+/* 自分専用ヒーローカード（最上部・大きく表示） */
+.lb-self-hero {
+    background: linear-gradient(135deg, #2b2456 0%, #1e293b 70%);
+    border: 1.5px solid var(--primary-color, #bb86fc);
+    border-radius: 14px;
+    padding: 16px;
+    margin-bottom: 18px;
+    box-shadow: 0 6px 24px rgba(187, 134, 252, 0.18);
+    cursor: pointer;
+}
+
+.lb-self-hero__head {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 14px;
+}
+
+.lb-self-hero__rank {
+    flex-shrink: 0;
+    width: 44px;
+    height: 44px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.05rem;
+    font-weight: 800;
+    background: #334155;
+    color: #cbd5e1;
+}
+
+/* プロフィール画像（順位アイコンの代わり） */
+.lb-self-hero__ava {
+    flex-shrink: 0;
+    width: 48px;
+    height: 48px;
+    border-radius: 50%;
+    overflow: hidden;
+    background: #334155;
+    border: 2px solid var(--primary-color, #bb86fc);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+}
+
+.lb-self-hero__ava img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+}
+
+.lb-self-hero__name {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 1.3rem;
+    font-weight: 800;
+    line-height: 1.1;
+}
+
+.lb-self-hero__name > span:first-child {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.lb-self-hero__you {
+    flex-shrink: 0;
+    font-size: 0.6rem;
+    background: var(--primary-color, #bb86fc);
+    color: #000;
+    padding: 2px 7px;
+    border-radius: 999px;
+    font-weight: bold;
+}
+
+.lb-self-hero__rankline {
+    font-size: 0.75rem;
+    color: #94a3b8;
+    margin-top: 4px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.lb-self-hero__body {
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: 12px;
+}
+
+.lb-self-hero__score {
+    font-size: 2.6rem;
+    font-weight: 800;
+    line-height: 1;
+}
+
+.lb-self-hero__scorelabel {
+    font-size: 0.7rem;
+    color: #94a3b8;
+    margin-top: 4px;
+    letter-spacing: 1px;
+}
+
+.lb-self-hero__spark { flex-shrink: 0; line-height: 0; }
+
+.lb-self-hero__stats {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 8px;
+    margin-top: 14px;
+    padding-top: 12px;
+    border-top: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.lb-self-hero__stats > div { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.lb-self-hero__stats span { font-size: 0.66rem; color: #94a3b8; white-space: nowrap; }
+.lb-self-hero__stats b { font-size: 1rem; }
+
+/* リーダーボードの各行 */
+.lb-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    background: #1e293b;
+    border: 1px solid #334155;
+    border-radius: 10px;
+    padding: 10px 12px;
+    margin-bottom: 8px;
+}
+
+.lb-row.is-self {
+    border-color: var(--primary-color, #bb86fc);
+    background: rgba(187, 134, 252, 0.1);
+}
+
+.lb-rank {
+    flex-shrink: 0;
+    width: 28px;
+    height: 28px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+    font-size: 0.85rem;
+    font-weight: 800;
+    background: #334155;
+    color: #cbd5e1;
+}
+
+.lb-rank--1 { background: linear-gradient(135deg, #fde047, #f59e0b); color: #422006; }
+.lb-rank--2 { background: linear-gradient(135deg, #e2e8f0, #94a3b8); color: #1e293b; }
+.lb-rank--3 { background: linear-gradient(135deg, #fdba74, #c2703a); color: #3a1c06; }
+
+.lb-main {
+    flex: 1;
+    min-width: 0;
+}
+
+.lb-name {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 1rem;
+    font-weight: bold;
+    cursor: pointer;
+    white-space: nowrap;
+    overflow: hidden;
+}
+
+/* 名前本体は伸縮可（残り幅を確保）。装飾(YOU/称号)は縮めない */
+.lb-name > span:first-child {
+    flex: 1 1 auto;
+    min-width: 3em;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.lb-name .title-icon,
+.lb-name > span:not(:first-child) { flex: 0 0 auto; }
+
+.lb-name .title-icon { font-size: 0.95rem; }
+
+.lb-sub {
+    font-size: 0.72rem;
+    color: #94a3b8;
+    margin-top: 2px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.lb-sub__icons {
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+    font-size: 0.9rem;
+}
+
+.lb-spark { flex-shrink: 0; line-height: 0; }
+
+.lb-metric {
+    flex-shrink: 0;
+    text-align: right;
+    min-width: 52px;
+}
+
+.lb-metric__value { font-size: 1.05rem; font-weight: 800; line-height: 1.1; }
+.lb-metric__unit { font-size: 0.68rem; color: #94a3b8; }
+
+.lb-divider {
+    position: relative;
+    text-align: center;
+    margin: 20px 0 14px;
+}
+.lb-divider hr {
+    border: none;
+    border-top: 1px solid #334155;
+    margin: 0;
+    position: absolute;
+    top: 50%;
+    width: 100%;
+    z-index: 1;
+}
+.lb-divider span {
+    background: var(--bg-color, #0f172a);
+    padding: 0 12px;
+    color: #64748b;
+    font-size: 0.7rem;
+    font-weight: bold;
+    letter-spacing: 2px;
+    position: relative;
+    z-index: 2;
+}
+
+/* ---- A. 個人詳細：期間スクラバー（タイムライン・フィルタ） ---- */
+.pf {
+    background: #1e293b;
+    border: 1px solid #334155;
+    border-radius: 12px;
+    padding: 12px 14px;
+}
+
+.pf__head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    margin-bottom: 10px;
+}
+
+.pf__modes {
+    display: inline-flex;
+    background: #0f172a;
+    border: 1px solid #334155;
+    border-radius: 999px;
+    padding: 2px;
+}
+
+.pf__mode {
+    border: none;
+    background: transparent;
+    color: #94a3b8;
+    font-size: 0.78rem;
+    padding: 5px 14px;
+    border-radius: 999px;
+    cursor: pointer;
+    transition: all 0.15s;
+}
+
+.pf__mode.is-active {
+    background: var(--primary-color, #bb86fc);
+    color: #000;
+    font-weight: bold;
+}
+
+.pf__custom-toggle {
+    background: transparent;
+    border: 1px solid #475569;
+    color: #cbd5e1;
+    font-size: 0.72rem;
+    padding: 5px 12px;
+    border-radius: 999px;
+    cursor: pointer;
+    flex-shrink: 0;
+}
+
+.pf__viz { margin: 2px 0 6px; }
+
+.pf__viz-cap {
+    font-size: 0.66rem;
+    color: #64748b;
+    margin-bottom: 6px;
+}
+
+.pf__bars {
+    display: flex;
+    align-items: flex-end;
+    gap: 3px;
+    height: 52px;
+}
+
+.pf__bar {
+    flex: 1;
+    height: 100%;
+    display: flex;
+    align-items: flex-end;
+    min-width: 4px;
+}
+
+.pf__bar-fill {
+    width: 100%;
+    background: #334155;
+    border-radius: 3px 3px 0 0;
+    transition: background 0.15s, height 0.2s;
+}
+
+.pf__bar.is-on .pf__bar-fill {
+    background: linear-gradient(180deg, #bb86fc, #8b5cf6);
+}
+
+.pf__axis {
+    display: flex;
+    justify-content: space-between;
+    font-size: 0.62rem;
+    color: #64748b;
+    margin-top: 4px;
+}
+
+.pf__prop {
+    height: 18px;
+    background: #0f172a;
+    border: 1px solid #334155;
+    border-radius: 999px;
+    overflow: hidden;
+    margin-top: 8px;
+}
+
+.pf__prop-fill {
+    height: 100%;
+    background: linear-gradient(90deg, #8b5cf6, #bb86fc);
+    border-radius: 999px;
+    transition: width 0.2s;
+}
+
+/* 操作の主役：プリセットボタン */
+.pf__presets {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin: 10px 0 2px;
+}
+
+.pf__preset {
+    flex: 1 1 auto;
+    min-width: 54px;
+    text-align: center;
+    padding: 8px 10px;
+    border-radius: 9px;
+    border: 1px solid #475569;
+    background: rgba(51, 65, 85, 0.6);
+    color: #e2e8f0;
+    font-size: 0.8rem;
+    cursor: pointer;
+    transition: all 0.15s;
+}
+
+.pf__preset:hover { border-color: var(--primary-color, #bb86fc); }
+
+.pf__preset.is-active {
+    background: var(--primary-color, #bb86fc);
+    color: #000;
+    border-color: var(--primary-color, #bb86fc);
+    font-weight: bold;
+}
+
+.pf__label {
+    margin-top: 12px;
+    font-size: 0.85rem;
+    color: #e2e8f0;
+}
+
+.pf__label .pf__cov {
+    color: #94a3b8;
+    font-size: 0.72rem;
+    margin-left: 6px;
+}
+
+.pf__custom {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+    margin-top: 12px;
+    padding-top: 10px;
+    border-top: 1px solid #334155;
+}
+
+.pf__custom input[type=date] {
+    background: #0f172a;
+    border: 1px solid #475569;
+    color: #e2e8f0;
+    border-radius: 6px;
+    padding: 4px 8px;
+    font-size: 0.8rem;
+}
+
+.pf__custom button {
+    background: var(--primary-color, #bb86fc);
+    color: #000;
+    border: none;
+    border-radius: 6px;
+    padding: 5px 14px;
+    font-size: 0.8rem;
+    font-weight: bold;
+    cursor: pointer;
+}
+
+.pf__noviz {
+    font-size: 0.78rem;
+    color: #64748b;
+    text-align: center;
+    padding: 18px 0;
+}
+
+/* ---- A. 個人詳細：KPIサマリーカード ---- */
+.stat-kpi-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 10px;
+    margin-bottom: 16px;
+}
+
+@media (min-width: 520px) {
+    .stat-kpi-grid { grid-template-columns: repeat(4, 1fr); }
+}
+
+.stat-kpi {
+    background: linear-gradient(135deg, #1e293b 0%, #273449 100%);
+    border: 1px solid #334155;
+    border-radius: 12px;
+    padding: 14px 10px;
+    text-align: center;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+}
+
+.stat-kpi--hero {
+    grid-column: 1 / -1;
+    padding: 20px 16px;
+    border-color: #475569;
+    box-shadow: 0 8px 28px rgba(0, 0, 0, 0.3);
+}
+
+.stat-kpi__label {
+    font-size: 0.7rem;
+    color: #94a3b8;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+}
+
+.stat-kpi__value {
+    font-size: 1.5rem;
+    font-weight: 800;
+    line-height: 1;
+}
+
+.stat-kpi--hero .stat-kpi__value { font-size: 2.6rem; }
+
+.stat-kpi__value .stat-kpi__icon { font-size: 1.4rem; margin-right: 4px; }
+
+.stat-kpi__badge {
+    font-size: 0.66rem;
+    font-weight: bold;
+    padding: 2px 8px;
+    border-radius: 999px;
+    background: rgba(148, 163, 184, 0.18);
+    color: #cbd5e1;
+}
+.stat-kpi__badge--good { background: rgba(74, 222, 128, 0.18); color: #4ade80; }
+.stat-kpi__badge--bad { background: rgba(248, 113, 113, 0.18); color: #f87171; }
+
+/* ---- A. ハイライトバナー ---- */
+.stat-highlight {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    background: linear-gradient(135deg, rgba(187, 134, 252, 0.18), rgba(3, 218, 198, 0.1));
+    border: 1px solid rgba(187, 134, 252, 0.35);
+    border-radius: 12px;
+    padding: 12px 14px;
+    margin-bottom: 16px;
+}
+.stat-highlight__icon { font-size: 1.6rem; flex-shrink: 0; }
+.stat-highlight__text { font-size: 0.85rem; color: #e2e8f0; line-height: 1.35; }
+.stat-highlight__text b { color: #fff; }
+
+/* ---- A. アコーディオン（折りたたみ詳細） ---- */
+.stat-acc {
+    background: var(--surface-color, #1e1e1e);
+    border: 1px solid #334155;
+    border-radius: 12px;
+    margin-bottom: 12px;
+    overflow: hidden;
+}
+
+.stat-acc > summary {
+    list-style: none;
+    cursor: pointer;
+    padding: 14px 16px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 0.95rem;
+    font-weight: bold;
+    color: #e2e8f0;
+    user-select: none;
+}
+
+.stat-acc > summary::-webkit-details-marker { display: none; }
+
+.stat-acc__icon { font-size: 1.1rem; }
+.stat-acc__title { flex: 1; }
+.stat-acc__hint { font-size: 0.72rem; font-weight: normal; color: #94a3b8; }
+.stat-acc__chevron { transition: transform 0.2s; color: #94a3b8; }
+.stat-acc[open] > summary .stat-acc__chevron { transform: rotate(180deg); }
+
+.stat-acc__body { padding: 4px 16px 18px; }
+
+/* ---- C. 称号コレクション（進捗付き） ---- */
+.title-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(96px, 1fr));
+    gap: 10px;
+}
+
+.title-card {
+    position: relative;
+    border: 2px solid #334155;
+    background: rgba(30, 41, 59, 0.5);
+    border-radius: 10px;
+    padding: 10px 6px;
+    text-align: center;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 5px;
+    min-height: 92px;
+    cursor: pointer;
+    transition: transform 0.1s;
+}
+
+/* ピン留め（表示中）の称号 */
+.title-card.is-pinned {
+    box-shadow: 0 0 0 2px var(--primary-color, #bb86fc), 0 2px 10px rgba(187, 134, 252, 0.35);
+}
+
+.title-card__pin {
+    position: absolute;
+    top: -7px;
+    right: -7px;
+    font-size: 0.85rem;
+    line-height: 1;
+    filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.5));
+}
+
+/* 選択可能（自分の獲得済み称号）であることを示すヒント */
+.title-card.is-selectable:hover {
+    transform: scale(1.04);
+}
+
+.title-edit-note {
+    font-size: 0.72rem;
+    color: var(--primary-color, #bb86fc);
+    background: rgba(187, 134, 252, 0.1);
+    border: 1px solid rgba(187, 134, 252, 0.3);
+    border-radius: 8px;
+    padding: 7px 10px;
+    margin-bottom: 12px;
+}
+.title-card:hover { transform: scale(1.03); }
+
+.title-card.is-locked { opacity: 0.65; }
+
+.title-card--gold { border-color: #ffd700; background: rgba(51, 65, 85, 0.8); }
+.title-card--silver { border-color: #c0c0c0; background: rgba(51, 65, 85, 0.8); }
+.title-card--bronze { border-color: #cd7f32; background: rgba(51, 65, 85, 0.8); }
+.title-card--special { border-color: #a855f7; background: rgba(51, 65, 85, 0.8); }
+.title-card--shame { border-color: #dc2626; background: rgba(127, 29, 29, 0.4); }
+
+.title-card__icon { font-size: 1.7rem; }
+.title-card__name { font-size: 0.68rem; font-weight: bold; line-height: 1.2; color: #fff; }
+.title-card.is-locked .title-card__name { color: #64748b; }
+
+/* 称号進捗バー */
+.title-prog {
+    width: 100%;
+    height: 5px;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.12);
+    overflow: hidden;
+    margin-top: 2px;
+}
+.title-prog__bar {
+    height: 100%;
+    border-radius: 999px;
+    background: linear-gradient(90deg, #8b5cf6, #bb86fc);
+}
+.title-prog__text { font-size: 0.6rem; color: #94a3b8; line-height: 1; }
 
 /* ローディング画面 */
 #loading-screen {
