@@ -97,6 +97,30 @@ window.AppStorage.updateUserAvatar = async function (name, avatarBase64) {
     }
 };
 
+// 表示する称号（推し称号）。配列を返す。未設定なら null（=従来の自動表示にフォールバック）
+window.AppStorage.getPinnedTitles = async function (name) {
+    try {
+        const doc = await db.collection("users").doc(name).get();
+        if (!doc.exists) return null;
+        const v = doc.data().pinnedTitles;
+        return Array.isArray(v) ? v : null;
+    } catch (e) {
+        console.error("getPinnedTitles failed:", e);
+        return null;
+    }
+};
+
+window.AppStorage.updatePinnedTitles = async function (name, ids) {
+    const value = Array.isArray(ids) ? ids.slice(0, 3) : [];
+    try {
+        await db.collection("users").doc(name).set({ pinnedTitles: value }, { merge: true });
+        return true;
+    } catch (e) {
+        console.error("updatePinnedTitles failed:", e);
+        return false;
+    }
+};
+
 window.AppStorage.getUnlinkedUsers = async function () {
     try {
         const snapshot = await db.collection("users").get();

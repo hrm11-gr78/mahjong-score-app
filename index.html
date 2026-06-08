@@ -344,7 +344,7 @@
                 </form>
                 </div><!-- /#new-set-panel -->
 
-                <h2 class="home-history-title">過去のセット</h2>
+                <h2 class="home-history-title">セット履歴</h2>
                 <div id="session-list">
                     <!-- Session list injected here -->
                 </div>
@@ -718,13 +718,7 @@
 
             <!-- USERS SECTION -->
             <section id="users">
-                <h2>ユーザー管理</h2>
-                <div class="form-group">
-                    <input type="text" id="new-user-name" placeholder="名前を入力...">
-                </div>
-                <button id="add-user-btn" class="btn-primary" style="margin-bottom: 20px;">ユーザー追加</button>
-
-                <!-- 自分・マイメンバー・管理UIはJS側で動的に挿入 -->
+                <!-- 自分・マイメンバー管理UIはJS側で動的に挿入 -->
                 <ul id="user-list" class="user-list">
                     <!-- Users will be injected here -->
                 </ul>
@@ -857,52 +851,14 @@
                 <!-- 期間フィルター -->
                 <div id="user-detail-period-filter" style="margin-bottom: 16px;"></div>
 
-                <div id="cumulative-score-card" class="history-card"
-                    style="text-align: center; padding: 40px 30px; margin-bottom: 25px; background: linear-gradient(135deg, #1e293b 0%, #334155 100%); border: 2px solid #475569; box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3); position: relative; overflow: hidden;">
-                    <!-- Background decoration -->
-                    <div
-                        style="position: absolute; top: -50%; right: -50%; width: 200%; height: 200%; background: radial-gradient(circle, rgba(255,255,255,0.03) 0%, transparent 70%); pointer-events: none;">
-                    </div>
+                <!-- ハイライトバナー（JSで描画） -->
+                <div id="ud-highlight"></div>
 
-                    <div style="position: relative; z-index: 1;">
-                        <div
-                            style="font-size: 1rem; color: #e2e8f0; margin-bottom: 16px; letter-spacing: 1px; text-transform: uppercase; font-weight: 600; padding: 8px 20px; border: 2px solid rgba(226, 232, 240, 0.3); border-radius: 20px; display: inline-block;">
-                            累計スコア</div>
+                <!-- KPIサマリーカード（JSで描画） -->
+                <div id="ud-kpi" class="stat-kpi-grid"></div>
 
-                        <div style="display: flex; align-items: center; justify-content: center; gap: 15px;">
-                            <div id="score-icon"
-                                style="font-size: 2.5rem; filter: drop-shadow(0 2px 8px rgba(0,0,0,0.3));">
-                                🎯</div>
-                            <div
-                                style="font-size: 4rem; font-weight: 800; line-height: 1; text-shadow: 0 4px 12px rgba(0,0,0,0.4);">
-                                <span id="user-total-score">0</span>
-                            </div>
-                        </div>
-                        <!-- スパークライングラフ用プレースホルダー -->
-                        <div id="score-sparkline-container"></div>
-                    </div>
-                </div>
-
-                <div class="history-card">
-                    <h3>セット履歴</h3>
-                    <table class="history-table">
-                        <thead>
-                            <tr>
-                                <th>日付</th>
-                                <th>スコア</th>
-                                <th>収支</th>
-                                <th style="font-size:0.8em">1着</th>
-                                <th style="font-size:0.8em">2着</th>
-                                <th style="font-size:0.8em">3着</th>
-                                <th style="font-size:0.8em">4着</th>
-                            </tr>
-                        </thead>
-                        <tbody id="user-history-list">
-                            <!-- History injected here -->
-                        </tbody>
-                    </table>
-
-                </div>
+                <!-- 詳細（折りたたみアコーディオン群・JSで描画） -->
+                <div id="ud-details"></div>
     </div>
 
     <!-- Reauthentication Modal -->
@@ -1192,11 +1148,13 @@
                 <datalist id="yakuman-list">
                     <option value="国士無双">
                     <option value="四暗刻">
+                    <option value="四槓子">
                     <option value="大三元">
+                    <option value="大四喜">
+                    <option value="小四喜">
                     <option value="字一色">
                     <option value="緑一色">
                     <option value="清老頭">
-                    <option value="四喜和">
                     <option value="九蓮宝燈">
                     <option value="天和">
                     <option value="地和">
