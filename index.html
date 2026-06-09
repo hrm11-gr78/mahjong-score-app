@@ -839,6 +839,18 @@
                 </div>
             </section>
 
+            <!-- MAHJONG STATS SECTION（麻雀データ） -->
+            <section id="mahjong-stats" style="display: none;">
+                <div class="content-header">
+                    <h2 style="display:flex; align-items:center; gap:10px;">
+                        <span>📚</span> 麻雀データ
+                    </h2>
+                </div>
+                <p class="mstats-intro">役満の出現確率や裏ドラの乗りやすさなど、麻雀の統計データをまとめています。</p>
+                <!-- タブ＋カードは renderMahjongStats() で描画 -->
+                <div id="mahjong-stats-body"></div>
+            </section>
+
 
             <!-- USER DETAIL SECTION -->
             <section id="user-detail">
@@ -1222,6 +1234,10 @@
             <span class="bottom-nav__icon">🖼️</span>
             <span class="bottom-nav__label">ギャラリー</span>
         </button>
+        <button type="button" class="bottom-nav__item" data-target="mahjong-stats">
+            <span class="bottom-nav__icon">📚</span>
+            <span class="bottom-nav__label">データ</span>
+        </button>
     </nav>
 
 
@@ -1234,6 +1250,7 @@
 
     <script src="sw.js"></script>
     <script src="js/mahjong.js"></script>
+    <script src="js/mahjong-stats.js"></script>
     <script src="js/storage.js"></script>
     <script src="js/settlement.js"></script>
     <script src="js/league.js"></script>
