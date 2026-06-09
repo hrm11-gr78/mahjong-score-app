@@ -455,7 +455,8 @@ const NAV_PARENT_MAP = {
     'user-detail': 'users',
     'league-section': 'league-section',
     'roulette': 'roulette',
-    'gallery': 'gallery'
+    'gallery': 'gallery',
+    'mahjong-stats': 'mahjong-stats'
 };
 
 // 認証・初期設定画面（ヘッダーアイコンを隠す）
@@ -504,6 +505,9 @@ function navigateTo(targetId) {
     if (targetId === 'users') {
         renderUserList();
         updateFriendBadge();
+    }
+    if (targetId === 'mahjong-stats') {
+        renderMahjongStats();
     }
 
     // ボトムナビのアクティブ表示（詳細画面は親タブを点灯）
@@ -1784,6 +1788,34 @@ function showToast(message, duration = 3000) {
 }
 
 /**
+ * 取り消し可能なトースト。メッセージと「元に戻す」ボタンを表示し、
+ * 押下時に onUndo を実行する。破壊的操作（フレンド解除など）の救済に使う。
+ * @param {string} message
+ * @param {() => (void|Promise<void>)} onUndo
+ * @param {number} duration 表示時間(ms)
+ */
+function showUndoToast(message, onUndo, duration = 6000) {
+    let toast = document.getElementById('app-undo-toast');
+    if (!toast) {
+        toast = document.createElement('div');
+        toast.id = 'app-undo-toast';
+        toast.className = 'app-undo-toast';
+        document.body.appendChild(toast);
+    }
+    if (toast._timer) clearTimeout(toast._timer);
+    toast.innerHTML = `<span class="undo-msg"></span><button type="button" class="undo-btn">元に戻す</button>`;
+    toast.querySelector('.undo-msg').textContent = message;
+    const hide = () => toast.classList.remove('show');
+    toast.querySelector('.undo-btn').onclick = async () => {
+        clearTimeout(toast._timer);
+        hide();
+        try { await onUndo(); } catch (e) { console.error('undo failed:', e); }
+    };
+    requestAnimationFrame(() => toast.classList.add('show'));
+    toast._timer = setTimeout(hide, duration);
+}
+
+/**
  * リーグの終了条件（期間）に対局日が収まるか判定する。
  * - 期間(period)リーグ: 開始日〜終了日（終了日は23:59:59まで）の範囲内なら true。
  * - 半荘数(count)/条件なしのリーグ: 日付の制約はないので常に true。
@@ -1893,7 +1925,20 @@ if (!document.getElementById('btn-spin-style')) {
  * @param {string} deviceUser - デバイスユーザー名
  * @param {string[]} allUsers - 全ユーザー名の配列
  */
-async function renderFriendSection(deviceUser, allUsers) {
+// 名前から決定的に配色を作るアバター（頭文字バッジ）用スタイル。
+// 同じ名前なら常に同じ色になるよう文字コードからhueを算出する。
+function friendAvatarStyle(name) {
+    let h = 0;
+    for (let i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) % 360;
+    const h2 = (h + 38) % 360;
+    return `background:linear-gradient(135deg, hsl(${h} 62% 48%), hsl(${h2} 68% 40%));`;
+}
+// 名前の先頭1文字（サロゲートペア対応）。アバターに表示する。
+function friendInitial(name) {
+    return Array.from(String(name || ''))[0] || '?';
+}
+
+async function renderFriendSection(deviceUser, allUsers, highlightName = null) {
     // フレンドセクションの取得または作成（旧 my-member-section の位置を踏襲）
     let section = document.getElementById('friend-section');
     if (!section) {
@@ -1930,78 +1975,94 @@ async function renderFriendSection(deviceUser, allUsers) {
     const excluded = new Set([deviceUser, ...friends, ...reqOut, ...reqIn]);
     const candidates = allUsers.filter(u => !excluded.has(u));
 
-    // フレンド/申請の行を作るヘルパー（data-action / data-name で委譲処理）
-    const row = (name, buttons) => `
-        <div style="display:flex; align-items:center; gap:8px; padding:8px 10px; background:#0f172a; border:1px solid #334155; border-radius:8px; margin-bottom:6px;">
-            <span style="flex:1; min-width:0; color:#e2e8f0; font-size:0.9rem; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${escapeHtml(name)}</span>
-            ${buttons}
-        </div>`;
-    const btn = (action, name, label, style) =>
-        `<button data-action="${action}" data-name="${escapeHtml(name)}" style="${style} padding:6px 12px; border-radius:8px; cursor:pointer; font-size:0.82rem; white-space:nowrap; flex-shrink:0; border:none;">${label}</button>`;
+    // 行のパーツ生成ヘルパー（data-action / data-name でイベント委譲）
+    const avatar = (name) =>
+        `<div class="friend-avatar" style="${friendAvatarStyle(name)}">${escapeHtml(friendInitial(name))}</div>`;
+    const namePlain = (name, sub) =>
+        `<div class="friend-name-plain"><span class="nm">${escapeHtml(name)}</span>${sub ? `<span class="sub">${escapeHtml(sub)}</span>` : ''}</div>`;
+    const nameBtn = (name, sub) =>
+        `<button class="friend-name-btn" data-action="open" data-name="${escapeHtml(name)}">
+            <span class="nm">${escapeHtml(name)}</span>${sub ? `<span class="sub">${escapeHtml(sub)}</span>` : ''}
+         </button>`;
+    const actBtn = (action, name, label, cls) =>
+        `<button class="friend-action ${cls}" data-action="${action}" data-name="${escapeHtml(name)}">${label}</button>`;
+    const wrapRow = (name, inner) =>
+        `<div class="friend-row" data-name="${escapeHtml(name)}">${inner}</div>`;
 
-    const inHtml = reqIn.map(name => row(name,
-        btn('accept', name, '承認', 'background:linear-gradient(135deg,#10b981,#059669); color:white;') +
-        `<span style="width:6px;"></span>` +
-        btn('decline', name, '拒否', 'background:#7f1d1d; color:#fca5a5; border:1px solid #ef4444;')
+    // 受信した申請：承認/拒否（名前タップで相手の成績へ）
+    const inHtml = reqIn.map(name => wrapRow(name,
+        avatar(name) + nameBtn(name, '承認待ち') +
+        actBtn('accept', name, '承認', 'is-accept') +
+        actBtn('decline', name, '拒否', 'is-danger')
     )).join('');
 
-    const outHtml = reqOut.map(name => row(name,
-        btn('cancel', name, '取消', 'background:#334155; color:#cbd5e1;')
+    // 送信済みの申請：取消
+    const outHtml = reqOut.map(name => wrapRow(name,
+        avatar(name) + namePlain(name, '申請中') +
+        actBtn('cancel', name, '取消', 'is-muted')
     )).join('');
 
+    // フレンド一覧：名前タップで成績へ。解除は「⋯」メニューを開いた時だけ表示。
     const friendsHtml = accountFriends.length > 0
-        ? accountFriends.map(name => row(name, btn('remove', name, '解除', 'background:#7f1d1d; color:#fca5a5; border:1px solid #ef4444;'))).join('')
-        : `<div style="color:#64748b; font-size:0.85rem; padding:6px 2px;">まだフレンドがいません</div>`;
+        ? accountFriends.map(name => wrapRow(name,
+            avatar(name) + nameBtn(name, '成績を見る') +
+            `<button class="friend-kebab" data-action="menu" data-name="${escapeHtml(name)}" aria-label="メニュー">⋯</button>` +
+            actBtn('remove', name, '解除', 'friend-remove-btn is-danger')
+        )).join('')
+        : `<div class="friend-empty">まだフレンドがいません。<br>上の入力欄から申請を送ってみましょう。</div>`;
 
     section.innerHTML = `
-        <div style="background:#1e293b; border:1px solid #334155; border-radius:10px; padding:16px; margin-top:20px;">
-            <h3 style="color:#e2e8f0; font-size:1rem; margin:0 0 14px 0; display:flex; align-items:center; gap:8px;">
+        <div class="friend-card">
+            <h3 class="friend-card-title">
                 👥 フレンド管理
-                <span style="font-size:0.75rem; color:#94a3b8; font-weight:normal;">(${accountFriends.length}人)</span>
+                <span class="friend-count">${accountFriends.length}人</span>
             </h3>
 
             <!-- 申請を送る -->
-            <div style="margin-bottom:16px;">
-                <div style="font-size:0.8rem; color:#94a3b8; margin-bottom:6px;">フレンド申請を送る</div>
-                <div style="display:flex; gap:8px; align-items:center;">
-                    <div style="flex:1; min-width:0;">
+            <div class="friend-group">
+                <div class="friend-group-label">フレンド申請を送る</div>
+                <div class="friend-add-row">
+                    <div class="friend-add-field">
                         <input
                             id="friend-add-input"
                             type="text"
                             placeholder="ユーザー名を入力..."
                             list="friend-add-candidates"
-                            style="width:100%; box-sizing:border-box; padding:8px 12px; background:#0f172a; border:1px solid #475569; border-radius:8px; color:#e2e8f0; font-size:0.9rem;"
                             autocomplete="off"
                         />
                         <datalist id="friend-add-candidates">
                             ${candidates.map(name => `<option value="${escapeHtml(name)}">`).join('')}
                         </datalist>
                     </div>
-                    <button
-                        id="friend-add-btn"
-                        style="padding:8px 16px; background:linear-gradient(135deg,#6366f1,#8b5cf6); color:white; border:none; border-radius:8px; cursor:pointer; font-size:0.9rem; white-space:nowrap; flex-shrink:0;"
-                    >申請</button>
+                    <button id="friend-add-btn" class="friend-add-btn">申請</button>
                 </div>
             </div>
 
             ${reqIn.length > 0 ? `
-            <div style="margin-bottom:16px;">
-                <div style="font-size:0.8rem; color:#94a3b8; margin-bottom:6px;">受信した申請 (${reqIn.length})</div>
+            <div class="friend-group">
+                <div class="friend-group-label">受信した申請 <span class="friend-group-count">${reqIn.length}</span></div>
                 ${inHtml}
             </div>` : ''}
 
             ${reqOut.length > 0 ? `
-            <div style="margin-bottom:16px;">
-                <div style="font-size:0.8rem; color:#94a3b8; margin-bottom:6px;">送信済みの申請 (${reqOut.length})</div>
+            <div class="friend-group">
+                <div class="friend-group-label">送信済みの申請 <span class="friend-group-count">${reqOut.length}</span></div>
                 ${outHtml}
             </div>` : ''}
 
-            <div>
-                <div style="font-size:0.8rem; color:#94a3b8; margin-bottom:6px;">フレンド一覧</div>
+            <div class="friend-group">
+                <div class="friend-group-label">フレンド一覧</div>
                 ${friendsHtml}
             </div>
         </div>
     `;
+
+    // 追加/復元直後の行を一度だけ光らせる（軽い動きで成功を伝える）
+    if (highlightName) {
+        section.querySelectorAll('.friend-row').forEach(r => {
+            if (r.dataset.name === highlightName) r.classList.add('just-added');
+        });
+    }
 
     // 申請送信
     const addBtn = document.getElementById('friend-add-btn');
@@ -2021,8 +2082,11 @@ async function renderFriendSection(deviceUser, allUsers) {
                 error: '申請に失敗しました'
             };
             showToast(messages[status] || messages.error);
-            if (status === 'sent' || status === 'auto_accepted') addInput.value = '';
+            const ok = status === 'sent' || status === 'auto_accepted';
+            if (ok) addInput.value = '';
             await Promise.all([renderUserList(), renderUserOptions(), updateFriendBadge()]);
+            // 成立/送信できた相手の行を光らせる（renderUserList の再描画後に再適用）
+            if (ok) await renderFriendSection(deviceUser, allUsers, targetName);
         };
         addBtn.addEventListener('click', doSend);
         addInput.addEventListener('keydown', e => { if (e.key === 'Enter') doSend(); });
@@ -2035,20 +2099,52 @@ async function renderFriendSection(deviceUser, allUsers) {
         if (!target) return;
         const action = target.dataset.action;
         const name = target.dataset.name;
+
+        // 「⋯」メニュー開閉：その行の解除ボタンだけを表示（他行は閉じる）
+        if (action === 'menu') {
+            const rowEl = target.closest('.friend-row');
+            const willOpen = rowEl && !rowEl.classList.contains('menu-open');
+            section.querySelectorAll('.friend-row.menu-open').forEach(r => r.classList.remove('menu-open'));
+            if (willOpen) rowEl.classList.add('menu-open');
+            return;
+        }
         if (!name) return;
+
+        // 名前タップ：そのユーザーの成績へ
+        if (action === 'open') {
+            openUserDetail(name);
+            return;
+        }
+
+        // 解除：確認ダイアログの代わりにUndoトーストで救済する
+        if (action === 'remove') {
+            await window.AppStorage.removeFriend(deviceUser, name);
+            await Promise.all([renderUserList(), renderUserOptions(), updateFriendBadge()]);
+            showUndoToast(`「${name}」とのフレンドを解除しました`, async () => {
+                // acceptFriendRequest は双方を friends に戻すため、解除の取り消しに使える
+                await window.AppStorage.acceptFriendRequest(deviceUser, name);
+                showToast(`「${name}」とのフレンドを復元しました`);
+                await Promise.all([renderUserList(), renderUserOptions(), updateFriendBadge()]);
+                await renderFriendSection(deviceUser, allUsers, name);
+            });
+            return;
+        }
+
+        // 承認：成立した相手の行を光らせる
         if (action === 'accept') {
             await window.AppStorage.acceptFriendRequest(deviceUser, name);
             showToast(`「${name}」とフレンドになりました`);
-        } else if (action === 'decline') {
+            await Promise.all([renderUserList(), renderUserOptions(), updateFriendBadge()]);
+            await renderFriendSection(deviceUser, allUsers, name);
+            return;
+        }
+
+        if (action === 'decline') {
             await window.AppStorage.declineFriendRequest(deviceUser, name);
             showToast(`「${name}」の申請を拒否しました`);
         } else if (action === 'cancel') {
             await window.AppStorage.cancelFriendRequest(deviceUser, name);
             showToast(`「${name}」への申請を取り消しました`);
-        } else if (action === 'remove') {
-            if (!confirm(`「${name}」とのフレンドを解除しますか？`)) return;
-            await window.AppStorage.removeFriend(deviceUser, name);
-            showToast(`「${name}」とのフレンドを解除しました`);
         } else {
             return;
         }
@@ -2074,6 +2170,64 @@ async function updateFriendBadge() {
         badge.style.display = 'block';
     } else {
         badge.style.display = 'none';
+    }
+}
+
+// =============================================================================
+// 麻雀データページ（window.MahjongStats を参照してタブ＋カードを描画）
+// =============================================================================
+let mstatsActiveCat = null; // 選択中カテゴリID
+
+function renderMahjongStats() {
+    const root = document.getElementById('mahjong-stats-body');
+    if (!root) return;
+
+    const data = window.MahjongStats;
+    const categories = (data && Array.isArray(data.categories)) ? data.categories : [];
+    if (categories.length === 0) {
+        root.innerHTML = '<div class="mstats-empty">データがまだありません。</div>';
+        return;
+    }
+
+    // 選択中カテゴリが無効なら先頭にフォールバック
+    if (!mstatsActiveCat || !categories.some(c => c.id === mstatsActiveCat)) {
+        mstatsActiveCat = categories[0].id;
+    }
+    const activeCat = categories.find(c => c.id === mstatsActiveCat) || categories[0];
+
+    const tabsHtml = categories.map(c => `
+        <button class="mstats-tab ${c.id === mstatsActiveCat ? 'is-active' : ''}" data-cat="${escapeHtml(c.id)}">
+            ${c.icon ? `<span class="mstats-tab__icon">${c.icon}</span>` : ''}${escapeHtml(c.name)}
+        </button>`).join('');
+
+    const items = Array.isArray(activeCat.items) ? activeCat.items : [];
+    const cardsHtml = items.length > 0
+        ? items.map(it => `
+            <div class="mstats-card">
+                <div class="mstats-card__head">
+                    <span class="mstats-card__name">${escapeHtml(it.name ?? '')}</span>
+                    <span class="mstats-card__value">${escapeHtml(it.value ?? '')}${it.unit ? `<span class="mstats-card__unit">${escapeHtml(it.unit)}</span>` : ''}</span>
+                </div>
+                ${it.note ? `<div class="mstats-card__note">${escapeHtml(it.note)}</div>` : ''}
+                ${it.source ? `<div class="mstats-card__source">出典: ${escapeHtml(it.source)}</div>` : ''}
+            </div>`).join('')
+        : '<div class="mstats-empty">このカテゴリのデータはまだありません。</div>';
+
+    root.innerHTML = `
+        <div class="mstats-tabs">${tabsHtml}</div>
+        <div class="mstats-list">${cardsHtml}</div>
+        ${data.updated ? `<div class="mstats-updated">最終更新: ${escapeHtml(data.updated)}</div>` : ''}
+    `;
+
+    // タブ切替（onclick 単一ハンドラで委譲。再描画で要素が使い回されてもリスナーが累積しない）
+    const tabsEl = root.querySelector('.mstats-tabs');
+    if (tabsEl) {
+        tabsEl.onclick = (e) => {
+            const btn = e.target.closest('.mstats-tab');
+            if (!btn) return;
+            mstatsActiveCat = btn.dataset.cat;
+            renderMahjongStats();
+        };
     }
 }
 
@@ -2762,6 +2916,45 @@ function heroTrendChart(points, sessionCount) {
 
 // 称号コレクションのHTMLを生成（未獲得には進捗バー付き）
 // 戻り値: { html, unlocked, total }
+// 閾値系の未獲得称号の進捗ヒント（単位付き）。例:「あと2回（現在の最高 3 / 5連続）」
+function thresholdTitleHint(title, cur) {
+    if (!Number.isFinite(cur)) cur = 0; // 記録なし(-Infinity等)を0扱いにして「∞」表示を防ぐ
+    const remain = Math.max(0, Math.ceil(title.threshold - cur));
+    switch (title.category) {
+        case 'streak_top':
+        case 'streak_rentai':
+        case 'streak_avoid':
+            return `あと${remain}回（現在の最高 ${cur} / ${title.threshold}連続）`;
+        case 'high_score':
+            return `あと${remain.toLocaleString()}点（自己最高 ${cur.toLocaleString()} / ${title.threshold.toLocaleString()}点）`;
+        case 'game_count':
+            return `あと${remain}戦（${cur} / ${title.threshold}戦）`;
+        case 'total_score': {
+            const c = Math.round(cur);
+            return `あと${Math.max(0, title.threshold - c)}pt（現在 ${c >= 0 ? '+' : ''}${c} / +${title.threshold}）`;
+        }
+        default:
+            return `あと${remain}（${cur} / ${title.threshold}）`;
+    }
+}
+
+// check系（役満回数・平均順位など）の未獲得称号の進捗ヒント。測れないものは空文字。
+function checkTitleHint(title, stats) {
+    if (!stats) return '';
+    if (title.category === 'yakuman') {
+        // 天和/地和は真偽のみ（進捗なし）。回数系は現在の達成回数を提示。
+        if (title.id === 'tenhou_holder' || title.id === 'chiihou_holder') return '';
+        const cnt = stats.recordYakumanCount ?? stats.yakumanCount ?? 0;
+        return `これまで ${cnt}回 達成`;
+    }
+    if (title.category === 'avg_rank') {
+        const v = stats.minAverageRank || 0;
+        // 記録が無いときは条件(description)に「30戦以上」が含まれるため進捗行は省く
+        return v > 0 ? `現在のベスト平均順位 ${v.toFixed(2)}` : '';
+    }
+    return '';
+}
+
 function buildTitleCollectionHtml(userName, stats, pinnedIds = null, editable = false) {
     const pinnedSet = new Set(Array.isArray(pinnedIds) ? pinnedIds : []);
     const typeMap = stats ? {
@@ -2789,16 +2982,18 @@ function buildTitleCollectionHtml(userName, stats, pinnedIds = null, editable = 
         let isUnlocked = false, progress = null, hint = '';
         if (title.check) {
             isUnlocked = !!(stats && title.check(stats));
+            if (!isUnlocked) hint = checkTitleHint(title, stats);
         } else if (title.threshold !== undefined) {
             if (title.category === 'minus_score') {
                 const worst = stats ? (stats.worstCumulativeScore ?? stats.minCumulativeScore ?? stats.totalScore ?? 0) : 0;
                 isUnlocked = worst <= title.threshold;
+                // 不名誉系は進捗を出さず、条件(description)のみ提示
             } else {
                 const cur = typeMap[title.category] ?? 0;
                 isUnlocked = cur >= title.threshold;
                 if (!isUnlocked && title.rank !== 'shame' && title.threshold > 0) {
                     progress = Math.max(0, Math.min(1, cur / title.threshold));
-                    hint = `あと ${Math.max(0, Math.ceil(title.threshold - cur))} で獲得（${cur} / ${title.threshold}）`;
+                    hint = thresholdTitleHint(title, cur);
                 }
             }
         }
@@ -2816,14 +3011,18 @@ function buildTitleCollectionHtml(userName, stats, pinnedIds = null, editable = 
         const progHtml = (progress !== null)
             ? `<div class="title-prog"><div class="title-prog__bar" style="width:${(progress * 100).toFixed(0)}%;"></div></div><div class="title-prog__text">${Math.round(progress * 100)}%</div>`
             : '';
-        const pinBadge = isPinned ? '<span class="title-card__pin" aria-hidden="true">⭐</span>' : '';
+        // 自分のページの獲得済み称号は⭐ボタンでピン留め切替。
+        // それ以外（他人ページ等）でピン留め済みなら読み取り専用の⭐バッジを表示。
+        const pinControl = (editable && isUnlocked)
+            ? `<button type="button" class="title-card__pinbtn ${isPinned ? 'is-on' : ''}" data-pin="1" aria-label="${isPinned ? '一覧表示を解除' : '一覧に表示'}" title="${isPinned ? '一覧に表示中（タップで解除）' : '一覧に表示する'}">⭐</button>`
+            : (isPinned ? '<span class="title-card__pin" aria-hidden="true">⭐</span>' : '');
 
         html += `<div class="title-card ${rankClass} ${lockedClass} ${pinnedClass} ${selectableClass}"
             data-id="${title.id}"
             data-unlocked="${isUnlocked ? '1' : '0'}"
             data-name="${title.name}" data-desc="${title.description}"
             data-rank="${(title.rank || '').toUpperCase()}" data-hint="${hint}">
-            ${pinBadge}
+            ${pinControl}
             <div class="title-card__icon"${isUnlocked ? '' : ' style="filter:grayscale(100%);"'}>${icon}</div>
             <div class="title-card__name">${name}</div>
             ${progHtml}
@@ -2867,6 +3066,7 @@ async function renderUserDetail(userName, filteredSessions = null, filterKey = '
     const rankCounts = [0, 0, 0, 0];
     let totalGames = 0;
     const windStats = { '東': 0, '南': 0, '西': 0, '北': 0 };
+    const windCounts = { '東': 0, '南': 0, '西': 0, '北': 0 };
     const rankSequence = [];
     chronological.forEach(session => {
         session.games.forEach(game => {
@@ -2877,7 +3077,10 @@ async function renderUserDetail(userName, filteredSessions = null, filterKey = '
                 totalGames++;
                 rankSequence.push(p.rank);
             }
-            if (p.wind && windStats[p.wind] !== undefined) windStats[p.wind] += (p.finalScore || 0);
+            if (p.wind && windStats[p.wind] !== undefined) {
+                windStats[p.wind] += (p.finalScore || 0);
+                windCounts[p.wind]++;
+            }
         });
     });
 
@@ -2972,32 +3175,96 @@ async function renderUserDetail(userName, filteredSessions = null, filterKey = '
             : '';
     }
 
-    // ====== セット履歴行（新しい順）======
-    let historyRows = '';
-    newestFirst.forEach(session => {
+    // ====== セット履歴（新しい順）======
+    // 各セットの素点・収支・着順内訳・半荘数を集計する。
+    const setData = newestFirst.map(session => {
         const ss = sessionScores.get(session.id) || 0;
         const sc = parseFloat(ss.toFixed(1));
-        const scClass = sc >= 0 ? 'score-positive' : 'score-negative';
-        const scStr = sc > 0 ? `+${sc}` : `${sc}`;
         const rate = session.rate || 0;
-        let amountHtml;
-        if (rate > 0) {
-            const amount = Math.round(ss * rate * 10);
-            amountHtml = `<td class="${amount >= 0 ? 'score-positive' : 'score-negative'}">${amount > 0 ? '+' + amount : amount}</td>`;
-        } else { amountHtml = '<td>-</td>'; }
+        const amount = rate > 0 ? Math.round(ss * rate * 10) : null;
         const rc = [0, 0, 0, 0];
         session.games.forEach(g => {
             const p = g.players.find(x => x.name === userName);
             if (p && p.rank >= 1 && p.rank <= 4) rc[p.rank - 1]++;
         });
-        historyRows += `
-            <tr style="cursor:pointer;" onclick="openSession(${session.id})">
-                <td>${session.date}</td>
-                <td class="${scClass}">${scStr}</td>
-                ${amountHtml}
-                <td>${rc[0]}</td><td>${rc[1]}</td><td>${rc[2]}</td><td>${rc[3]}</td>
-            </tr>`;
+        return { id: session.id, date: session.date, sc, amount, rc, games: rc[0] + rc[1] + rc[2] + rc[3] };
     });
+
+    // サマリー集計（セット単位ならではの指標。合計系・平均着順は他画面で確認できるため非表示）
+    const setCount = setData.length;
+    const setPlusCount = setData.filter(d => d.sc > 0).length;
+    const setMaxAbs = setData.reduce((m, d) => Math.max(m, Math.abs(d.sc)), 0);
+    const setBest = setCount ? Math.max(...setData.map(d => d.sc)) : 0;
+    const setWorst = setCount ? Math.min(...setData.map(d => d.sc)) : 0;
+    // 収支がプラスのセットが連続した最大数（順序は時系列でも逆順でも連の長さは不変）
+    let setMaxWinStreak = 0, winRun = 0;
+    setData.forEach(d => { if (d.sc > 0) { winRun++; if (winRun > setMaxWinStreak) setMaxWinStreak = winRun; } else { winRun = 0; } });
+
+    // 最高/最低セット（2件以上かつスコアに差があるときのみバッジ表示）
+    let bestId = null, worstId = null;
+    if (setCount > 1) {
+        let best = setData[0], worst = setData[0];
+        setData.forEach(d => { if (d.sc > best.sc) best = d; if (d.sc < worst.sc) worst = d; });
+        if (best.sc !== worst.sc) { bestId = best.id; worstId = worst.id; }
+    }
+
+    const fmtSigned = (v) => v > 0 ? `+${v}` : `${v}`;
+
+    // セットカード（A:着順積み上げバー / C:スコア相対バー＋最高最低バッジ / F:カード型）
+    const setCardsHtml = setData.map(d => {
+        const scClass = d.sc >= 0 ? 'score-positive' : 'score-negative';
+        const amountHtml = d.amount !== null
+            ? `<span class="set-card__amount ${d.amount >= 0 ? 'score-positive' : 'score-negative'}">${fmtSigned(d.amount)}</span>`
+            : '';
+        const seg = (i) => d.rc[i] > 0
+            ? `<span class="rankbar__seg rankbar__seg--${i + 1}" style="flex:${d.rc[i]};" title="${i + 1}着 ×${d.rc[i]}">${d.rc[i]}</span>`
+            : '';
+        const rankBar = d.games > 0 ? `<div class="rankbar">${[0, 1, 2, 3].map(seg).join('')}</div>` : '';
+        const magPct = setMaxAbs > 0 ? Math.max(5, Math.round(Math.abs(d.sc) / setMaxAbs * 100)) : 0;
+        const magClass = d.sc >= 0 ? 'is-pos' : 'is-neg';
+        const badge = d.id === bestId ? '<span class="set-card__badge" title="期間中の最高スコア">🔆</span>'
+            : d.id === worstId ? '<span class="set-card__badge" title="期間中の最低スコア">💧</span>' : '';
+        return `
+            <div class="set-card" onclick="openSession(${d.id})">
+                <div class="set-card__top">
+                    <div class="set-card__date">${badge}${d.date}<span class="set-card__games">${d.games}戦</span></div>
+                    <div class="set-card__nums">
+                        <span class="set-card__score ${scClass}">${fmtSigned(d.sc)}</span>
+                        ${amountHtml}
+                    </div>
+                    <span class="set-card__chev">›</span>
+                </div>
+                ${rankBar}
+                <div class="set-card__mag"><span class="set-card__mag-fill ${magClass}" style="width:${magPct}%;"></span></div>
+            </div>`;
+    }).join('');
+
+    // B:サマリー帯（合計スコア / 合計収支 / プラス率 / 平均着順）
+    const setSummaryHtml = setCount > 0 ? `
+        <div class="set-summary">
+            <div class="set-summary__item">
+                <div class="set-summary__lbl">最高セット</div>
+                <div class="set-summary__val ${setBest >= 0 ? 'score-positive' : 'score-negative'}">${fmtSigned(setBest)}</div>
+            </div>
+            <div class="set-summary__item">
+                <div class="set-summary__lbl">最低セット</div>
+                <div class="set-summary__val ${setWorst >= 0 ? 'score-positive' : 'score-negative'}">${fmtSigned(setWorst)}</div>
+            </div>
+            <div class="set-summary__item">
+                <div class="set-summary__lbl">最多連勝</div>
+                <div class="set-summary__val">${setMaxWinStreak}<span class="set-summary__unit">連勝</span></div>
+            </div>
+            <div class="set-summary__item">
+                <div class="set-summary__lbl">プラス率</div>
+                <div class="set-summary__val">${Math.round(setPlusCount / setCount * 100)}%</div>
+            </div>
+        </div>
+        <div class="rankbar-legend">
+            <span><i class="dot--1"></i>1着</span>
+            <span><i class="dot--2"></i>2着</span>
+            <span><i class="dot--3"></i>3着</span>
+            <span><i class="dot--4"></i>4着</span>
+        </div>` : '';
 
     // ====== 称号コレクション ======
     // 自分のページなら表示称号を選択（ピン留め）できる
@@ -3013,22 +3280,45 @@ async function renderUserDetail(userName, filteredSessions = null, filterKey = '
         if (c && c.chartInstance) { c.chartInstance.destroy(); c.chartInstance = null; }
     });
 
-    const rankPcts = rankCounts.map(c => totalGames > 0 ? ((c / totalGames) * 100).toFixed(1) + '%' : '0.0%');
+    const rankPcts = rankCounts.map(c => totalGames > 0 ? ((c / totalGames) * 100).toFixed(1) : '0.0');
     const rankColors = ['#fcd34d', '#94a3b8', '#475569', '#ef4444'];
+
+    // 着順内訳：上部の積み上げ分布バー（セット履歴と同じトーン）
+    const rankDistBar = totalGames > 0
+        ? `<div class="rankbar rankbar--lg">${[0, 1, 2, 3].map(i => rankCounts[i] > 0
+            ? `<span class="rankbar__seg rankbar__seg--${i + 1}" style="flex:${rankCounts[i]};" title="${i + 1}着 ×${rankCounts[i]}">${rankCounts[i]}</span>`
+            : '').join('')}</div>`
+        : '';
+
+    // 着順カウント（件数＋％）
     const rankCountCells = [1, 2, 3, 4].map((r, i) => `
-        <div style="text-align:center;">
-            <div style="font-size:0.85rem; margin-bottom:4px; color:#e2e8f0; display:flex; align-items:center; justify-content:center; gap:5px;">
-                <span style="width:10px; height:10px; border-radius:50%; background:${rankColors[i]}; display:inline-block;"></span>${r}着
-            </div>
-            <div style="font-size:1.3rem; font-weight:bold;">${rankCounts[i]} <span style="font-size:0.75rem; color:#94a3b8; font-weight:normal;">(${rankPcts[i]})</span></div>
+        <div class="rank-cell">
+            <div class="rank-cell__head"><span class="rank-cell__dot" style="background:${rankColors[i]};"></span>${r}着</div>
+            <div class="rank-cell__val">${rankCounts[i]}<span class="rank-cell__pct">${rankPcts[i]}%</span></div>
         </div>`).join('');
 
-    const windCells = ['東', '南', '西', '北'].map(w => {
-        const v = Math.round(windStats[w] * 10) / 10;
-        const col = v > 0 ? '#4ade80' : (v < 0 ? '#f87171' : '#cbd5e1');
-        return `<div style="text-align:center; background:rgba(255,255,255,0.04); padding:10px 8px; border-radius:8px;">
-            <div style="font-size:0.8rem; color:#94a3b8; margin-bottom:2px;">${w}</div>
-            <div style="font-size:1rem; font-weight:bold; color:${col};">${v > 0 ? '+' : ''}${v}</div>
+    // ラス回避率（KPIに無い指標）をバー付きで表示
+    const avoidHtml = `
+        <div class="avoid-stat">
+            <div class="avoid-stat__row"><span>ラス回避率</span><b>${avoidLastRate !== null ? avoidLastRate.toFixed(1) + '%' : '-'}</b></div>
+            <div class="avoid-stat__bar"><span style="width:${avoidLastRate !== null ? avoidLastRate : 0}%;"></span></div>
+        </div>`;
+
+    // 起家別：ゼロ中心の発散バー＋半荘数。最も勝っている座席に👑。
+    const windVals = ['東', '南', '西', '北'].map(w => Math.round(windStats[w] * 10) / 10);
+    const windMaxAbs = Math.max(1, ...windVals.map(v => Math.abs(v)));
+    const bestSeatIdx = windVals.reduce((bi, v, i, arr) => v > arr[bi] ? i : bi, 0);
+    const windCells = ['東', '南', '西', '北'].map((w, i) => {
+        const v = windVals[i];
+        const n = windCounts[w] || 0;
+        const cls = v > 0 ? 'is-pos' : (v < 0 ? 'is-neg' : 'is-zero');
+        const half = Math.round(Math.abs(v) / windMaxAbs * 50);
+        const isBest = i === bestSeatIdx && v > 0 && n > 0;
+        return `<div class="seat-card ${isBest ? 'is-best' : ''}">
+            <div class="seat-card__head">${w}${isBest ? ' <span class="seat-card__crown">👑</span>' : ''}</div>
+            <div class="seat-card__val ${cls}">${v > 0 ? '+' : ''}${v}</div>
+            <div class="seat-bar"><span class="seat-bar__fill ${cls}" style="width:${half}%; ${v >= 0 ? 'left:50%;' : 'right:50%;'}"></span></div>
+            <div class="seat-card__sub">${n}戦</div>
         </div>`;
     }).join('');
 
@@ -3036,26 +3326,25 @@ async function renderUserDetail(userName, filteredSessions = null, filterKey = '
     if (detailsEl) {
         detailsEl.innerHTML = `
             <details class="stat-acc" open>
-                <summary><span class="stat-acc__icon">📊</span><span class="stat-acc__title">着順内訳</span><span class="stat-acc__chevron">▾</span></summary>
+                <summary><span class="stat-acc__icon">📊</span><span class="stat-acc__title">着順内訳</span><span class="stat-acc__hint">${totalGames}戦</span><span class="stat-acc__chevron">▾</span></summary>
                 <div class="stat-acc__body">
-                    <div style="display:flex; align-items:center; justify-content:space-between; gap:16px; flex-wrap:wrap;">
-                        <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px 24px; flex:1; min-width:180px;">
-                            ${rankCountCells}
-                        </div>
-                        <div style="width:110px; height:110px;"><canvas id="rank-pie-chart"></canvas></div>
+                    ${rankDistBar}
+                    <div class="rankbar-legend" style="margin-top:10px;">
+                        <span><i class="dot--1"></i>1着</span><span><i class="dot--2"></i>2着</span>
+                        <span><i class="dot--3"></i>3着</span><span><i class="dot--4"></i>4着</span>
                     </div>
-                    <div style="display:flex; justify-content:space-around; margin-top:16px; padding-top:14px; border-top:1px solid #334155;">
-                        <div style="text-align:center;"><div style="font-size:0.78rem; color:#94a3b8;">トップ率</div><div style="font-size:1.1rem; font-weight:bold;">${topStr}</div></div>
-                        <div style="text-align:center;"><div style="font-size:0.78rem; color:#94a3b8;">連対率</div><div style="font-size:1.1rem; font-weight:bold;">${rentaiStr}</div></div>
-                        <div style="text-align:center;"><div style="font-size:0.78rem; color:#94a3b8;">ラス回避率</div><div style="font-size:1.1rem; font-weight:bold;">${avoidLastRate !== null ? avoidLastRate.toFixed(1) + '%' : '-'}</div></div>
+                    <div class="rank-breakdown">
+                        <div class="rank-cell-grid">${rankCountCells}</div>
+                        <div class="rank-pie"><canvas id="rank-pie-chart"></canvas></div>
                     </div>
+                    ${avoidHtml}
                 </div>
             </details>
 
             <details class="stat-acc">
                 <summary><span class="stat-acc__icon">🪑</span><span class="stat-acc__title">起家別トータルスコア</span><span class="stat-acc__chevron">▾</span></summary>
                 <div class="stat-acc__body">
-                    <div style="display:grid; grid-template-columns:repeat(4,1fr); gap:8px;">${windCells}</div>
+                    <div class="seat-grid">${windCells}</div>
                 </div>
             </details>
 
@@ -3069,18 +3358,17 @@ async function renderUserDetail(userName, filteredSessions = null, filterKey = '
             <details class="stat-acc">
                 <summary><span class="stat-acc__icon">🏅</span><span class="stat-acc__title">称号コレクション</span><span class="stat-acc__hint" id="ud-title-hint">${titles.unlocked} / ${titles.total}</span><span class="stat-acc__chevron">▾</span></summary>
                 <div class="stat-acc__body">
-                    ${titleEditable ? `<div class="title-edit-note" id="ud-title-note">⭐ タップで一覧に表示する称号を選択（最大3つ・現在 ${titles.pinnedCount}/3）</div>` : ''}
+                    ${titleEditable ? `<div class="title-edit-note" id="ud-title-note">⭐ボタンで一覧に表示する称号を選択（最大3つ・現在 ${titles.pinnedCount}/3）／カードのタップで詳細を表示</div>` : ''}
                     <div class="title-grid" id="ud-title-grid">${titles.html}</div>
                 </div>
             </details>
 
             <details class="stat-acc">
-                <summary><span class="stat-acc__icon">🗓</span><span class="stat-acc__title">セット履歴</span><span class="stat-acc__hint">${newestFirst.length}件</span><span class="stat-acc__chevron">▾</span></summary>
-                <div class="stat-acc__body" style="overflow-x:auto;">
-                    <table class="history-table" style="width:100%;">
-                        <thead><tr><th>日付</th><th>スコア</th><th>収支</th><th style="font-size:0.8em">1着</th><th style="font-size:0.8em">2着</th><th style="font-size:0.8em">3着</th><th style="font-size:0.8em">4着</th></tr></thead>
-                        <tbody>${historyRows || '<tr><td colspan="7" style="text-align:center; color:#94a3b8; padding:16px;">記録がありません</td></tr>'}</tbody>
-                    </table>
+                <summary><span class="stat-acc__icon">🗓</span><span class="stat-acc__title">セット履歴</span><span class="stat-acc__hint">${setCount}件</span><span class="stat-acc__chevron">▾</span></summary>
+                <div class="stat-acc__body">
+                    ${setCount > 0
+                ? setSummaryHtml + `<div class="set-card-list">${setCardsHtml}</div>`
+                : '<div class="set-empty">記録がありません</div>'}
                 </div>
             </details>
         `;
@@ -3093,8 +3381,10 @@ async function renderUserDetail(userName, filteredSessions = null, filterKey = '
             const card = e.target.closest('.title-card');
             if (!card) return;
             const unlocked = card.dataset.unlocked === '1';
+            const pinBtn = e.target.closest('.title-card__pinbtn');
 
-            if (titleEditable && unlocked) {
+            // ⭐ボタン：一覧表示用のピン留めをトグル（情報トーストは出さない）
+            if (pinBtn && titleEditable && unlocked) {
                 const id = card.dataset.id;
                 const idx = pinnedLocal.indexOf(id);
                 if (idx >= 0) {
@@ -3110,13 +3400,21 @@ async function renderUserDetail(userName, filteredSessions = null, filterKey = '
                 const gridEl = document.getElementById('ud-title-grid');
                 if (gridEl) gridEl.innerHTML = rebuilt.html;
                 const noteEl = document.getElementById('ud-title-note');
-                if (noteEl) noteEl.textContent = `⭐ タップで一覧に表示する称号を選択（最大3つ・現在 ${rebuilt.pinnedCount}/3）`;
+                if (noteEl) noteEl.textContent = `⭐ボタンで一覧に表示する称号を選択（最大3つ・現在 ${rebuilt.pinnedCount}/3）`;
 
                 // 一覧側の表示も最新化（バックグラウンド）
                 renderUserList();
+                return;
+            }
+
+            // カード本体タップ：称号の情報を表示する（獲得済みは名前・説明・ランク、未獲得は条件・進捗）
+            if (unlocked) {
+                showToast(`【${card.dataset.name}】\n${card.dataset.desc}\nランク: ${card.dataset.rank}`);
             } else {
-                if (unlocked) showToast(`【${card.dataset.name}】\n${card.dataset.desc}\nランク: ${card.dataset.rank}`);
-                else showToast(`【未獲得】\n${card.dataset.hint || '条件を満たすと獲得できます'}`);
+                // 名前は伏せたまま、達成条件と進捗を提示する
+                const cond = card.dataset.desc ? `条件：${card.dataset.desc}` : '条件を満たすと獲得できます';
+                const prog = card.dataset.hint ? `\n進捗：${card.dataset.hint}` : '';
+                showToast(`🔒 まだ獲得していない称号\n${cond}${prog}`);
             }
         };
         detailsEl.addEventListener('click', detailsEl._titleClickHandler);
@@ -3147,16 +3445,25 @@ async function renderUserDetail(userName, filteredSessions = null, filterKey = '
         const lineCanvas = document.getElementById('rank-history-canvas-internal');
         if (lineCanvas && rankSequence.length > 0) {
             if (typeof Chart.getChart === 'function') { const ex = Chart.getChart(lineCanvas); if (ex) ex.destroy(); }
+            // 各局の点を着順色（金/銀/黒/赤）で塗り分ける
+            const pointColors = rankSequence.map(r => rankColors[r - 1] || '#a78bfa');
+            const datasets = [{
+                label: '順位', data: rankSequence, borderColor: '#a78bfa',
+                backgroundColor: 'rgba(167,139,250,0.2)', borderWidth: 2,
+                pointBackgroundColor: pointColors, pointBorderColor: '#0f172a', pointBorderWidth: 1.5,
+                pointRadius: 5, pointHoverRadius: 7, tension: 0.1, fill: false, clip: false, order: 2
+            }];
+            // 平均順位の基準線（点線）
+            if (avgRank !== null) {
+                datasets.push({
+                    label: '平均', data: rankSequence.map(() => avgRank),
+                    borderColor: 'rgba(148,163,184,0.7)', borderWidth: 1.5, borderDash: [5, 4],
+                    pointRadius: 0, pointHoverRadius: 0, fill: false, tension: 0, order: 1
+                });
+            }
             lineCanvas.chartInstance = new Chart(lineCanvas.getContext('2d'), {
                 type: 'line',
-                data: {
-                    labels: rankSequence.map((_, i) => `${i + 1}`),
-                    datasets: [{
-                        label: '順位', data: rankSequence, borderColor: '#a78bfa',
-                        backgroundColor: 'rgba(167,139,250,0.2)', borderWidth: 2, pointBackgroundColor: '#fff',
-                        pointBorderColor: '#8b5cf6', pointRadius: 5, pointHoverRadius: 7, tension: 0.1, fill: false, clip: false
-                    }]
-                },
+                data: { labels: rankSequence.map((_, i) => `${i + 1}`), datasets },
                 options: {
                     responsive: true, maintainAspectRatio: false,
                     layout: { padding: { top: 16, bottom: 12, left: 8, right: 8 } },
@@ -3164,7 +3471,15 @@ async function renderUserDetail(userName, filteredSessions = null, filterKey = '
                         y: { min: 1, max: 4, reverse: true, ticks: { stepSize: 1, color: '#e2e8f0', font: { size: 12 } }, grid: { color: 'rgba(255,255,255,0.1)' } },
                         x: { display: false }
                     },
-                    plugins: { legend: { display: false }, datalabels: { display: false } }
+                    plugins: {
+                        legend: { display: false }, datalabels: { display: false },
+                        tooltip: {
+                            callbacks: {
+                                title: (items) => `${items[0].dataIndex + 1}局目`,
+                                label: (item) => item.datasetIndex === 0 ? `${item.raw}着` : `平均 ${avgRank.toFixed(2)}`
+                            }
+                        }
+                    }
                 }
             });
             const lineDetails = lineCanvas.closest('details');
