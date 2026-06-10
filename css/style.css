@@ -3346,6 +3346,106 @@ section.active {
     }
 }
 
+/* ローディングのキャラを「走っている」風に演出 */
+.runner {
+    position: relative;
+    display: inline-flex;
+    align-items: flex-end;
+    justify-content: center;
+    width: 88px;
+    height: 92px;
+}
+
+/* キャラ本体: 上下に弾むストライド＋前後の傾き＋着地で少し潰れる */
+.runner img {
+    position: relative;
+    z-index: 2;
+    transform-origin: center bottom;
+    will-change: transform;
+    animation: runner-hop 0.6s ease-in-out infinite;
+}
+
+@keyframes runner-hop {
+    0%   { transform: translateY(0)     rotate(-5deg) scale(1, 1); }
+    20%  { transform: translateY(-14px) rotate(2deg)  scale(1, 1); }
+    40%  { transform: translateY(0)     rotate(5deg)  scale(1.05, 0.95); }
+    60%  { transform: translateY(-12px) rotate(-2deg) scale(1, 1); }
+    80%  { transform: translateY(0)     rotate(-5deg) scale(1.05, 0.95); }
+    100% { transform: translateY(0)     rotate(-5deg) scale(1, 1); }
+}
+
+/* スピードライン: 背後を後方へ流れる線で前進感を出す */
+.runner__lines {
+    position: absolute;
+    inset: 0;
+    z-index: 1;
+    overflow: hidden;
+    pointer-events: none;
+}
+
+.runner__lines::before,
+.runner__lines::after {
+    content: "";
+    position: absolute;
+    right: -45%;
+    height: 3px;
+    border-radius: 3px;
+    background: var(--primary-color);
+    opacity: 0;
+}
+
+.runner__lines::before {
+    top: 34%;
+    width: 45%;
+    animation: runner-line 0.6s linear infinite;
+}
+
+.runner__lines::after {
+    top: 58%;
+    width: 32%;
+    animation: runner-line 0.6s linear infinite 0.3s;
+}
+
+@keyframes runner-line {
+    0%   { transform: translateX(0);     opacity: 0; }
+    25%  { opacity: 0.7; }
+    100% { transform: translateX(-190%); opacity: 0; }
+}
+
+/* 影: キャラが浮くと小さく薄く、着地で大きく濃く */
+.runner__shadow {
+    position: absolute;
+    bottom: 0;
+    left: 50%;
+    width: 56px;
+    height: 8px;
+    background: rgba(0, 0, 0, 0.28);
+    border-radius: 50%;
+    filter: blur(2px);
+    z-index: 0;
+    animation: runner-shadow 0.6s ease-in-out infinite;
+}
+
+@keyframes runner-shadow {
+    0%   { transform: translateX(-50%) scale(1);    opacity: 0.35; }
+    20%  { transform: translateX(-50%) scale(0.65); opacity: 0.18; }
+    40%  { transform: translateX(-50%) scale(1);    opacity: 0.35; }
+    60%  { transform: translateX(-50%) scale(0.7);  opacity: 0.2; }
+    80%  { transform: translateX(-50%) scale(1);    opacity: 0.35; }
+    100% { transform: translateX(-50%) scale(1);    opacity: 0.35; }
+}
+
+/* アニメーションを抑える設定のユーザーには静止表示 */
+@media (prefers-reduced-motion: reduce) {
+    .runner img,
+    .runner__lines::before,
+    .runner__lines::after,
+    .runner__shadow {
+        animation: none;
+    }
+    .runner__lines { display: none; }
+}
+
 /* 期間フィルターボタン */
 .period-btn:hover {
     opacity: 0.85;
@@ -6636,7 +6736,10 @@ body.auth-fullscreen .sticky-top {
    Create League Modal (renewed)
    ============================================================ */
 .lc-modal {
-    background: linear-gradient(160deg, rgba(187, 134, 252, 0.10), rgba(3, 218, 198, 0.04) 55%, var(--surface-color));
+    /* 不透明な下地(--surface-color)の上に色味グラデを薄く重ね、背面が透けないようにする */
+    background:
+        linear-gradient(160deg, rgba(187, 134, 252, 0.12), rgba(3, 218, 198, 0.05) 55%, rgba(30, 30, 30, 0)),
+        var(--surface-color);
     color: var(--text-primary);
     border: 1px solid rgba(187, 134, 252, 0.28);
     border-radius: 16px;
@@ -6649,8 +6752,8 @@ body.auth-fullscreen .sticky-top {
 }
 
 .lc-modal::backdrop {
-    background: rgba(0, 0, 0, 0.65);
-    backdrop-filter: blur(2px);
+    background: rgba(0, 0, 0, 0.78);
+    backdrop-filter: blur(3px);
 }
 
 .lc-modal__head {
@@ -7836,6 +7939,16 @@ body.hide-bottom-nav #app {
     color: #fff;
     box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.14);
     user-select: none;
+    overflow: hidden;
+}
+
+/* カスタムアイコンを設定しているフレンドは画像を円形に表示 */
+.friend-avatar--img img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    border-radius: 50%;
+    display: block;
 }
 
 .friend-name-btn,

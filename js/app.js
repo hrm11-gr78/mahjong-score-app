@@ -532,6 +532,11 @@ function navigateTo(targetId) {
 
     // Apply Action Restrictions
     updateActionRestrictions();
+
+    // 画面遷移後は遷移先の一番上を表示する（前画面のスクロール位置を引き継がない）
+    window.scrollTo(0, 0);
+    document.documentElement.scrollTop = 0;
+    document.body.scrollTop = 0;
 }
 
 /**
@@ -1975,9 +1980,24 @@ async function renderFriendSection(deviceUser, allUsers, highlightName = null) {
     const excluded = new Set([deviceUser, ...friends, ...reqOut, ...reqIn]);
     const candidates = allUsers.filter(u => !excluded.has(u));
 
+    // 一覧に出す全員のカスタムアイコンを先読み（共有 avatarCache を再利用）。
+    // 設定があれば頭文字バッジの代わりに画像を表示する。
+    const avatarNames = [...new Set([...accountFriends, ...reqIn, ...reqOut])];
+    await Promise.all(avatarNames.map(async (name) => {
+        if (avatarCache[name] === undefined && window.AppStorage && window.AppStorage.getUserAvatar) {
+            try { avatarCache[name] = await window.AppStorage.getUserAvatar(name); }
+            catch (_) { avatarCache[name] = null; }
+        }
+    }));
+
     // 行のパーツ生成ヘルパー（data-action / data-name でイベント委譲）
-    const avatar = (name) =>
-        `<div class="friend-avatar" style="${friendAvatarStyle(name)}">${escapeHtml(friendInitial(name))}</div>`;
+    const avatar = (name) => {
+        const img = avatarCache[name];
+        if (img) {
+            return `<div class="friend-avatar friend-avatar--img"><img src="${img}" alt="${escapeHtml(name)}"></div>`;
+        }
+        return `<div class="friend-avatar" style="${friendAvatarStyle(name)}">${escapeHtml(friendInitial(name))}</div>`;
+    };
     const namePlain = (name, sub) =>
         `<div class="friend-name-plain"><span class="nm">${escapeHtml(name)}</span>${sub ? `<span class="sub">${escapeHtml(sub)}</span>` : ''}</div>`;
     const nameBtn = (name, sub) =>
