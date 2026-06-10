@@ -58,7 +58,11 @@
         <!-- ローディング画面: Auth確認完了まで表示 -->
         <div id="loading-screen">
             <div class="loading-logo" style="display: flex; align-items: center; justify-content: center; gap: 10px;">
-                <img src="images/loading-icon.png" alt="雀ログ" style="width: 80px; height: 80px; object-fit: contain;">
+                <span class="runner">
+                    <span class="runner__lines" aria-hidden="true"></span>
+                    <img src="images/loading-icon.png" alt="雀ログ" style="width: 80px; height: 80px; object-fit: contain;">
+                    <span class="runner__shadow" aria-hidden="true"></span>
+                </span>
                 雀ログ
             </div>
             <div class="loading-spinner"></div>
