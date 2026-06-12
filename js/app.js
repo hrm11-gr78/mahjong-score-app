@@ -10,9 +10,10 @@ const userSelects = document.querySelectorAll('.user-select');
 // 実値とマスクの両方をDOMに描画しておき、body.money-hidden の有無でCSSが瞬時に切替える（再描画不要）。
 const MASK_MONEY_KEY = 'maskMoney';
 
-// 金額文字列をマスク対応ラッパで包む。非表示モード時は CSS により「￥＊＊＊」へ置き換わる。
+// 金額文字列をマスク対応ラッパで包む。非表示モード時は CSS により「＊＊＊」へ置き換わる。
+// （￥記号は付けない: 金額であることが分からないようにするため）
 window.maskYen = function (text) {
-    return `<span class="yen"><span class="yen-real">${text}</span><span class="yen-mask">￥＊＊＊</span></span>`;
+    return `<span class="yen"><span class="yen-real">${text}</span><span class="yen-mask">＊＊＊</span></span>`;
 };
 
 // 保存済みの状態を body クラス＋ボタン表示に反映する。
