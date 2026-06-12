@@ -5,6 +5,30 @@ const navButtons = document.querySelectorAll('nav button');
 const sections = document.querySelectorAll('section');
 const userSelects = document.querySelectorAll('.user-select');
 
+// --- 収支マスク（金額の表示/非表示）---
+// アプリを誰かに見せる際に、レートに基づく金額（円）の収支だけを伏せ字へ切り替える機能。
+// 実値とマスクの両方をDOMに描画しておき、body.money-hidden の有無でCSSが瞬時に切替える（再描画不要）。
+const MASK_MONEY_KEY = 'maskMoney';
+
+// 金額文字列をマスク対応ラッパで包む。非表示モード時は CSS により「＊＊＊」へ置き換わる。
+// （￥記号は付けない: 金額であることが分からないようにするため）
+window.maskYen = function (text) {
+    return `<span class="yen"><span class="yen-real">${text}</span><span class="yen-mask">＊＊＊</span></span>`;
+};
+
+// 保存済みの状態を body クラス＋ボタン表示に反映する。
+function applyMoneyMask(hidden) {
+    document.body.classList.toggle('money-hidden', hidden);
+    const btn = document.getElementById('header-mask-btn');
+    if (btn) {
+        btn.setAttribute('aria-pressed', hidden ? 'true' : 'false');
+        btn.title = hidden ? '収支（金額）を表示する' : '収支（金額）を隠す';
+    }
+}
+
+// 起動時に保存済みの状態を復元（既定は表示）。
+applyMoneyMask(localStorage.getItem(MASK_MONEY_KEY) === '1');
+
 // Auth Elements
 const loginSection = document.getElementById('login');
 const signupSection = document.getElementById('signup');
@@ -385,6 +409,15 @@ function setupNavigation() {
         settingsBtn.addEventListener('click', () => navigateTo('settings'));
         settingsBtn.dataset.listenerAttached = 'true';
     }
+    const maskBtn = document.getElementById('header-mask-btn');
+    if (maskBtn && !maskBtn.dataset.listenerAttached) {
+        maskBtn.addEventListener('click', () => {
+            const hidden = !document.body.classList.contains('money-hidden');
+            localStorage.setItem(MASK_MONEY_KEY, hidden ? '1' : '0');
+            applyMoneyMask(hidden);
+        });
+        maskBtn.dataset.listenerAttached = 'true';
+    }
 
     // 1c. ホームの「新規セット」フォーム開閉
     const newSetToggle = document.getElementById('new-set-toggle');
@@ -520,8 +553,10 @@ function navigateTo(targetId) {
     const isAuthScreen = AUTH_SCREENS.includes(targetId);
     const profileBtn = document.getElementById('header-profile-btn');
     const settingsBtn = document.getElementById('header-settings-btn');
+    const maskBtn = document.getElementById('header-mask-btn');
     if (profileBtn) profileBtn.style.display = isAuthScreen ? 'none' : 'flex';
     if (settingsBtn) settingsBtn.style.display = isAuthScreen ? 'none' : 'flex';
+    if (maskBtn) maskBtn.style.display = isAuthScreen ? 'none' : 'flex';
 
     // スコア入力中はミスタップ防止でボトムナビを隠す
     document.body.classList.toggle('hide-bottom-nav', targetId === 'input');
@@ -3149,7 +3184,7 @@ async function renderUserDetail(userName, filteredSessions = null, filterKey = '
                 <div class="stat-kpi__value" style="color:${scoreColor};">
                     <span class="stat-kpi__icon">${scoreIcon}</span>${scoreSign}${dispScore}
                 </div>
-                ${amountStr !== null ? `<div style="font-size:0.85rem; color:#cbd5e1; margin-top:4px;">${pLabel}収支 <b style="color:${amountColor};">${amountStr}</b></div>` : ''}
+                ${amountStr !== null ? `<div style="font-size:0.85rem; color:#cbd5e1; margin-top:4px;">${pLabel}収支 <b style="color:${amountColor};">${window.maskYen(amountStr)}</b></div>` : ''}
                 ${heroTrendChart(cumulativePoints, chronological.length)}
             </div>
             <div class="stat-kpi">
@@ -3234,7 +3269,7 @@ async function renderUserDetail(userName, filteredSessions = null, filterKey = '
     const setCardsHtml = setData.map(d => {
         const scClass = d.sc >= 0 ? 'score-positive' : 'score-negative';
         const amountHtml = d.amount !== null
-            ? `<span class="set-card__amount ${d.amount >= 0 ? 'score-positive' : 'score-negative'}">${fmtSigned(d.amount)}</span>`
+            ? `<span class="set-card__amount ${d.amount >= 0 ? 'score-positive' : 'score-negative'}">${window.maskYen(fmtSigned(d.amount))}</span>`
             : '';
         const seg = (i) => d.rc[i] > 0
             ? `<span class="rankbar__seg rankbar__seg--${i + 1}" style="flex:${d.rc[i]};" title="${i + 1}着 ×${d.rc[i]}">${d.rc[i]}</span>`
@@ -4145,7 +4180,7 @@ async function renderSessionTotal(session) {
             const amount = Math.round(score * rate * 10);
             const amountClass = amount >= 0 ? 'score-positive' : 'score-negative';
             const amountStr = amount > 0 ? `+${amount}` : `${amount}`;
-            amountHtml = `<td class="${amountClass}">${amountStr}</td>`;
+            amountHtml = `<td class="${amountClass}">${window.maskYen(amountStr)}</td>`;
         }
 
         // Get rank counts
