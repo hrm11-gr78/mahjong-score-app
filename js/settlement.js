@@ -12,6 +12,8 @@ window.Settlement = {
         const expenses = session.expenses || [];
         const settlement = this.calculate(session);
         const fmt = (n) => (n > 0 ? '+' : '') + Math.round(n).toLocaleString();
+        // 収支マスク（金額の表示/非表示）: app.js のラッパを利用。未ロード時は素通し。
+        const mask = window.maskYen || ((s) => s);
 
         // ===== カードヘッダー =====
         let html = `
@@ -49,13 +51,13 @@ window.Settlement = {
                             <div class="expense-item__note">${ex.note || 'その他'}</div>
                             <div class="expense-item__meta">${ex.payer} が立替 ／ <span class="tgt">${targetDisplay}</span> の分</div>
                         </div>
-                        <span class="expense-item__amount">¥${parseInt(ex.amount).toLocaleString()}</span>
+                        <span class="expense-item__amount">${mask(`¥${parseInt(ex.amount).toLocaleString()}`)}</span>
                         <button class="expense-item__del" onclick="Settlement.removeExpense('${session.id}', ${idx})" title="削除">🗑️</button>
                     </div>
                 `;
             });
             html += `</div>`;
-            html += `<div class="expense-total"><span>経費合計</span><b>¥${totalExpenses.toLocaleString()}</b></div>`;
+            html += `<div class="expense-total"><span>経費合計</span><b>${mask(`¥${totalExpenses.toLocaleString()}`)}</b></div>`;
         }
 
         // ===== 最終収支（プレイヤーごとのカード）=====
@@ -77,7 +79,7 @@ window.Settlement = {
                 <div class="balance-row balance-row--${cls}">
                     <div class="balance-row__main">
                         <span class="balance-row__name">${b.name}</span>
-                        <span class="balance-row__final">${fmt(b.final)}<small>円</small></span>
+                        <span class="balance-row__final">${mask(`${fmt(b.final)}<small>円</small>`)}</span>
                     </div>
                     <div class="balance-row__sub">
                         <span>${sub}</span>
@@ -102,7 +104,7 @@ window.Settlement = {
                             <span class="transfer-item__arrow">➔</span>
                             <span>${t.to}</span>
                         </div>
-                        <span class="transfer-item__amount">¥${t.amount.toLocaleString()}</span>
+                        <span class="transfer-item__amount">${mask(`¥${t.amount.toLocaleString()}`)}</span>
                     </div>
                 `;
             });

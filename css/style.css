@@ -2359,7 +2359,54 @@ input[type=number] {
     transform: rotate(35deg) translateY(-1px);
 }
 
+/* ===== 収支マスク（金額の表示/非表示トグル）===== */
+/* ヘッダーに複数アイコンが並ぶ場合の間隔 */
+.app-header__side {
+    gap: 8px;
+}
 
+/* マスクボタンのアイコン切替: 既定（表示中）は「目」、非表示中は「目に斜線」 */
+#header-mask-btn .mask-icon--hide {
+    display: none;
+}
+
+body.money-hidden #header-mask-btn .mask-icon--show {
+    display: none;
+}
+
+body.money-hidden #header-mask-btn .mask-icon--hide {
+    display: block;
+}
+
+/* 非表示中はボタンを点灯させて状態を明示 */
+body.money-hidden #header-mask-btn {
+    color: var(--secondary-color);
+    border-color: rgba(3, 218, 198, 0.55);
+    box-shadow: 0 0 0 3px rgba(3, 218, 198, 0.14);
+}
+
+#header-mask-btn:hover {
+    color: var(--secondary-color);
+    border-color: rgba(3, 218, 198, 0.55);
+    box-shadow: 0 0 0 4px rgba(3, 218, 198, 0.12), 0 6px 16px rgba(0, 0, 0, 0.40);
+    transform: translateY(-1px);
+}
+
+/* 金額ラッパ: 実値とマスクの両方をDOMに置き、body.money-hidden で瞬時に切替（再描画不要）。 */
+.yen-mask {
+    display: none;
+    color: var(--text-secondary);
+    font-weight: 700;
+    letter-spacing: 1px;
+}
+
+body.money-hidden .yen-real {
+    display: none;
+}
+
+body.money-hidden .yen-mask {
+    display: inline;
+}
 
 /* Player Select Wrapper */
 .player-select-wrapper {
